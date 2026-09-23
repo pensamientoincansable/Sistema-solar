@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="description" content="WALL·E Recolector de Basura Espacial - Juego en el Sistema Solar con menú holográfico" />
+  <meta name="theme-color" content="#00f0ff" />
+  <title>WALL·E • Sistema Solar - Recolector Galáctico</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;600&display=swap" rel="stylesheet">
+  <style>
+    /* Critical CSS para loading rápido */
+    html,body{margin:0;padding:0;background:#000;overflow:hidden;width:100%;height:100%}
+    #loading-screen{position:fixed;inset:0;background:#000;z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center}
+    .loader-ring{width:80px;height:80px;border:3px solid rgba(0,240,255,0.1);border-top-color:#00f0ff;border-radius:50%;animation:spin 1s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+  <!-- Loading -->
+  <div id="loading-screen">
+    <div class="loader-ring"></div>
+    <div style="margin-top:20px;font-family:Orbitron,monospace;letter-spacing:0.3em;color:#00f0ff;animation:pulse 1.5s ease-in-out infinite">INICIANDO SISTEMA SOLAR...</div>
+    <div style="margin-top:8px;font-family:Exo 2,sans-serif;font-size:0.7rem;color:#888">Cargando WALL·E y texturas planetarias</div>
+  </div>
+
+  <!-- Canvas juego -->
+  <canvas id="game-canvas" tabindex="0"></canvas>
+
+  <!-- Holographic Menu -->
+  <div id="holo-menu">
+    <div class="holo-container">
+      <div class="holo-left">
+        <h1>WALL·E<br>RECOLECTOR</h1>
+        <div class="subtitle">SISTEMA SOLAR • MISIÓN GALÁCTICA</div>
+
+        <div class="menu-options">
+          <button class="holo-btn active" id="btn-play">▶ Iniciar Misión <small>Explora y recolecta basura espacial</small></button>
+          <button class="holo-btn" id="btn-continue" style="display:none">↻ Continuar <small>Volver a la misión actual</small></button>
+          <button class="holo-btn" id="btn-planets">🪐 Sistema Solar <small>8 planetas, cada uno con civilización única</small></button>
+          <button class="holo-btn" id="btn-civilization">🏗️ Civilizaciones <small>Construye con materiales refinados</small></button>
+          <button class="holo-btn" id="btn-settings">⚙️ Configuración <small>PC / Móvil / TV - Resolución adaptativa</small></button>
+          <button class="holo-btn" id="btn-exit">⏻ Salir <small>Pausa / Salir al menú</small></button>
+        </div>
+
+        <div style="margin-top:20px;display:flex;gap:8px;flex-wrap:wrap">
+          <span style="font-size:0.65rem;padding:4px 8px;border:1px solid rgba(0,240,255,0.3);border-radius:12px;background:rgba(0,240,255,0.08)">WASD Mover</span>
+          <span style="font-size:0.65rem;padding:4px 8px;border:1px solid rgba(0,240,255,0.3);border-radius:12px;background:rgba(0,240,255,0.08)">Ratón Mirar</span>
+          <span style="font-size:0.65rem;padding:4px 8px;border:1px solid rgba(0,240,255,0.3);border-radius:12px;background:rgba(0,240,255,0.08)">Click Disparar</span>
+          <span style="font-size:0.65rem;padding:4px 8px;border:1px solid rgba(0,240,255,0.3);border-radius:12px;background:rgba(0,240,255,0.08)">C Cámara</span>
+          <span style="font-size:0.65rem;padding:4px 8px;border:1px solid rgba(0,240,255,0.3);border-radius:12px;background:rgba(0,240,255,0.08)">Espacio Depositar</span>
+        </div>
+      </div>
+
+      <div class="holo-right">
+        <div class="holo-card" id="section-planets">
+          <h3>🛰️ Mapa Estelar</h3>
+          <div class="planet-grid" id="planet-grid"></div>
+          <div style="margin-top:10px;font-size:0.7rem;opacity:0.6">Cada planeta genera basura única y permite una civilización adaptada. Acércate y refina.</div>
+        </div>
+
+        <div class="holo-card" id="section-civilization">
+          <h3>📦 Materiales & Civilización</h3>
+          <div id="civilization-progress" style="font-size:0.75rem;margin-bottom:8px;color:#ffe600">0/8 planetas (0%) - 0 estructuras</div>
+          <div class="materials-list" id="materials-list"></div>
+          <div style="margin-top:10px;display:flex;gap:6px">
+            <select id="build-planet-select" class="holo-select" style="flex:1"></select>
+            <button id="btn-build" class="holo-btn" style="padding:6px 12px;font-size:0.7rem">Construir</button>
+          </div>
+        </div>
+
+        <div class="holo-card" id="section-settings">
+          <h3>⚙️ Sistema Adaptativo</h3>
+          <div class="settings-row"><span>Calidad</span><select id="setting-quality" class="holo-select"><option>Auto (Adaptativa)</option><option>Baja (Móvil)</option><option>Media</option><option>Alta (PC)</option><option>Ultra (TV 4K)</option></select></div>
+          <div class="settings-row"><span>Cámara inicial</span><select id="setting-camera" class="holo-select"><option>Tercera persona</option><option>Primera persona</option></select></div>
+          <div class="settings-row"><span>Audio</span><input id="setting-sound" type="range" class="holo-range" min="0" max="100" value="70" /></div>
+          <div style="margin-top:8px;font-size:0.65rem;opacity:0.5">Optimizado: LOD planetario, instancing basura, frustum culling, pixel ratio dinámico, sombras adaptativas. Soporte Gamepad y táctil.</div>
+        </div>
+
+        <div class="holo-card" style="border-color:rgba(255,230,0,0.3)">
+          <h3 style="color:#ffe600">💡 Objetivo</h3>
+          <div style="font-size:0.75rem;line-height:1.4">
+            Eres WALL·E, recolector en el sistema solar. Recolecta basura orbital, llévala a la refinería (toroides brillantes), transforma en materiales y construye civilizaciones adaptadas a cada planeta. ¡Cuidado con drones piratas que roban basura! Usa láser (infinito) y plasma (potente).
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div class="hud-top">
+      <div class="hud-panel">
+        <h4>❤️ Integridad</h4>
+        <div class="bar"><div id="health-bar" class="bar-fill" style="width:100%"></div></div>
+        <div style="display:flex;justify-content:space-between;font-size:0.7rem"><span id="health-text">100%</span><span id="hud-planet">🌍 Tierra (60 u)</span></div>
+      </div>
+      <div class="hud-panel" style="text-align:center">
+        <h4>🗑️ Basura</h4>
+        <div class="trash-counter"><span id="trash-count">0</span>/<span id="trash-capacity">50</span></div>
+        <div id="refinery-hint" style="display:none;font-size:0.7rem;color:#00f0ff;margin-top:4px;background:rgba(0,240,255,0.15);padding:4px;border-radius:4px">⭘ Depositar</div>
+      </div>
+      <div class="hud-panel">
+        <h4>🔫 Armamento</h4>
+        <div style="font-family:Orbitron;font-size:0.9rem"><span id="hud-weapon">LÁSER</span> | <span id="hud-ammo" style="color:#ffe600">∞</span></div>
+        <div style="font-size:0.65rem;opacity:0.6;margin-top:4px">1 Láser • 2 Plasma • Click disparar</div>
+      </div>
+    </div>
+
+    <div class="hud-center">
+      <div id="crosshair" class="crosshair"></div>
+    </div>
+
+    <div class="hud-bottom">
+      <div class="hud-panel">
+        <h4>📦 Inventario Nave</h4>
+        <div id="hud-materials" class="materials-list" style="max-height:100px"></div>
+      </div>
+      <div style="display:flex;gap:12px;align-items:flex-end">
+        <div class="hud-panel" style="min-width:auto;padding:8px">
+          <div class="mini-map"><canvas id="minimap-canvas"></canvas></div>
+          <div style="text-align:center;font-size:0.6rem;margin-top:4px;opacity:0.7">MINIMAPA</div>
+        </div>
+        <div class="hud-panel" style="min-width:120px">
+          <h4>🎮 Controles</h4>
+          <div style="font-size:0.65rem;line-height:1.5">
+            WASD + Ratón<br>
+            Shift Boost<br>
+            C Cámara<br>
+            ESPACIO Acción
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile Controls -->
+  <div id="mobile-controls">
+    <div id="joystick-left" class="joystick-zone"><div class="joystick-base"><div class="joystick-stick"></div></div></div>
+    <div id="joystick-right" class="joystick-zone"><div class="joystick-base"><div class="joystick-stick"></div></div></div>
+    <div class="action-buttons">
+      <button class="mob-btn" data-action="shoot">🔫</button>
+      <button class="mob-btn" data-action="boost">🚀</button>
+      <button class="mob-btn" data-action="collect">📦</button>
+      <button class="mob-btn" data-action="camera">📷</button>
+    </div>
+  </div>
+
+  <!-- Notifications -->
+  <div id="notifications"></div>
+
+  <!-- Main -->
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

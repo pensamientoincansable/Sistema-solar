@@ -1,0 +1,18 @@
+{
+  "name": "walle-sistema-solar",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "WALL·E Recolector de Basura Espacial - Juego en el Sistema Solar",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 5173",
+    "lint": "eslint src --ext .js || true"
+  },
+  "dependencies": {
+    "three": "^0.160.0"
+  },
+  "devDependencies": {
+    "vite": "^5.1.0"
+  }
+}
