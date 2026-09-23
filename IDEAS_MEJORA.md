@@ -98,13 +98,36 @@ Juego de recolección espacial con WALL·E, sistema solar real con 8 planetas, r
 
 ## ✅ Checklist de Errores Solucionados
 
-- [x] Texturas planetarias 404 → uso de `textureLoader.setPath('/')` y rutas absolutas `/textures/...`
-- [x] Modelo WALL·E no carga → fallback cubo + onError handler
-- [x] Pointer lock solo cuando HUD visible → evita bloquear menú
-- [x] Joystick sobrescribe teclado → umbral 0.1
+### Carga / despliegue (causa de "el juego no carga")
+- [x] **GitHub Pages servía el código fuente sin compilar** (`Source: Deploy from a branch`) → `index.html` pedía `/src/main.js` (404 bajo `/Sistema-solar/`) y el navegador no puede resolver `import 'three'`. Solución: workflow `.github/workflows/deploy-pages.yml` que compila con Vite y publica `dist/` (Pages → Source: *GitHub Actions*).
+- [x] Rutas absolutas en el build (`/assets/...`) → `base: './'` en `vite.config.js`, funciona en cualquier subdirectorio.
+- [x] `textures/`, `scene.gltf` y `scene.bin` no se incluían en `dist/` → movidos a `public/`.
+- [x] Texturas planetarias nunca cargaban: `setPath('/')` + `/textures/x` generaba `//textures/x` (URL protocolo-relativa → host "textures") → helper `assetUrl()` basado en `import.meta.env.BASE_URL`.
+- [x] `hmr.host: 'localhost'` rompía el websocket de Vite detrás de un proxy (preview) → eliminado, el cliente infiere host/puerto de la página.
+- [x] Modelo WALL·E no carga → fallback cubo + onError handler (se mantiene)
+
+### Controles
+- [x] WALL·E seguía moviéndose tras soltar W/A/S/D, disparando tras soltar F/click y con boost tras soltar Shift (el estado se realimentaba: `this.boost = shift || this.boost`) → `InputSystem` recalcula el estado cada frame a partir de canales independientes (teclado, ratón, táctil, gamepad).
+- [x] El ratón hacía girar a WALL·E indefinidamente tras un solo movimiento → delta de ratón acumulado y consumido por frame (`lookDeltaX/Y`).
+- [x] Salto brusco al capturar el puntero (primer `movementX` enorme) → se descartan los 2 primeros eventos y se limita el delta por evento.
+- [x] A/D invertidos (la derecha del jugador mirando a +Z es −X) → corregido.
+- [x] Cabecear mirando a ±X producía alabeo (Euler `XYZ`) → orden `YXZ`.
+- [x] Botón 📷 móvil no cambiaba la cámara → `requestCameraToggle()`.
+- [x] ESC con puntero capturado no pausaba (el navegador se queda el keydown) → al perder la captura se pausa automáticamente; botón ❚❚ en el HUD.
+- [x] Pulsaciones rápidas de ESPACIO/📦 perdidas entre frames → latch de pulsación.
+- [x] Joystick sobrescribe teclado → canal táctil separado (sin umbral mágico)
 - [x] Memory leak proyectiles/explosiones → dispose + splice
 - [x] FPS bajo en móvil → AdaptiveResolution baja DPR y desactiva sombras
 - [x] Resize no actualiza cámara → listener en Game
 - [x] Basura infinita → respawn controlado y LOD invisible lejana
 - [x] Colisiones tunneling a alta velocidad → radius 4.5 y check cada frame
 - [x] TV host bloqueado → `allowedHosts: true` en vite.config
+- [x] Estrellas invisibles (la niebla exponencial las apagaba a 800-2000 u) → `fog: false` en el material
+- [x] `MeshBasicMaterial` con `emissive` (warning de Three.js) → eliminado
+- [x] Notificaciones ocultas detrás del menú (z-index) → por encima del menú
+- [x] `alert()` para la ficha de planeta (bloqueante y bloqueado en iframes) → panel en el propio menú
+- [x] Ajustes de Calidad / Cámara sin efecto → conectados a `AdaptiveResolution` y a la cámara
+- [x] Monitor 1080p detectado como TV → detección por UA de TV o ≥ 4K
+- [x] Sin colisión con sol/planetas → rebote amortiguado + daño por calor cerca del sol
+- [x] Enemigos atacaban en el punto de aparición → zona de exclusión + 12 s de gracia
+- [x] HUD repintaba `innerHTML` cada frame → refresco a 10 Hz solo si cambia

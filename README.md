@@ -4,7 +4,11 @@
 
 ![WALL·E](https://img.shields.io/badge/WALL·E-CC--BY--4.0-yellow) ![Three.js](https://img.shields.io/badge/Three.js-0.160-black) ![Vite](https://img.shields.io/badge/Vite-5.4-646cff) ![License](https://img.shields.io/badge/License-MIT-green)
 
-## 🎮 Demo en Vivo
+## 🎮 Jugar
+
+**🌐 Online (GitHub Pages):** https://pensamientoincansable.github.io/Sistema-solar/
+
+**💻 En local:**
 
 ```bash
 npm install
@@ -14,16 +18,29 @@ npm run dev
 
 **Preview Arena**: El servidor dev ya está configurado con `host: 0.0.0.0` y `allowedHosts: true` para funcionar en el preview https://{port}-{sandbox}.e2b.app
 
+## 🚀 Despliegue en GitHub Pages
+
+El juego se construye con Vite, así que GitHub Pages **no puede servir el código fuente tal cual**
+(`index.html` carga `/src/main.js` y el código importa `three` como módulo, que el navegador no
+sabe resolver sin empaquetar). Por eso el despliegue se hace con el workflow
+[`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml):
+
+1. En cada push a `main` compila (`npm ci && npm run build`) y publica la carpeta `dist/`.
+2. **Requisito (una sola vez):** en *Settings → Pages → Build and deployment → Source* debe estar
+   seleccionado **GitHub Actions** (no *Deploy from a branch*).
+3. `vite.config.js` usa `base: './'`, por lo que el build funciona en `/Sistema-solar/` o en cualquier otra ruta.
+4. Los assets estáticos (texturas y modelo GLTF) viven en `public/` y se copian a `dist/` en el build.
+
 ## 🌟 Características Implementadas
 
 ### Sistema Solar Real
-- **8 planetas** con texturas originales del repo (`textures/*_baseColor.jpeg`)
+- **8 planetas** con texturas originales del repo (`public/textures/*_baseColor.jpeg`)
 - Órbitas escaladas, rotación, atmósfera sutil, anillos de Saturno, Luna terrestre
 - Sol con glow y luz puntual, estrellas con 3000 puntos + parallax
 - Cinturón de asteroides entre Marte y Júpiter
 
 ### WALL·E Protagonista
-- Modelo GLTF original del repo (`scene.gltf` + `scene.bin`) - 24k vértices, CC-BY-4.0 Omshivam
+- Modelo GLTF original del repo (`public/scene.gltf` + `public/scene.bin`) - 24k vértices, CC-BY-4.0 Omshivam
 - Fallback cúbico si falla carga, para no bloquear gameplay
 - Física: velocidad max 35u/s, boost 2.2x, drag 0.92, aceleración 45
 - Thruster con luz puntual + partículas Points (80) + efecto boost
@@ -85,28 +102,33 @@ Construcción: consume materiales, añade estructura (domo/cubo) sobre planeta, 
 
 **Estructura Modular:**
 ```
+public/                 (assets estáticos copiados tal cual a dist/)
+  scene.gltf, scene.bin (modelo WALL·E)
+  textures/             (planetas, sol, luna, anillos, materiales del modelo)
 src/
   config/PlanetsConfig.js (datos planetas, materiales, trash, enemigos)
-  core/Game.js (loop, orquestación)
-  core/Input.js (teclado, ratón, gamepad, pointer lock)
+  core/Game.js (loop, orquestación, pausa, spawn)
+  core/Input.js (teclado, ratón, gamepad, táctil, pointer lock)
+  utils/assets.js (rutas de assets relativas a la base del despliegue)
   utils/AdaptiveResolution.js
   utils/MobileControls.js (joystick dual + botones)
   entities/Planet.js, SolarSystem.js, WallE.js, Trash.js, Enemy.js, Refinery.js, Civilization.js
   systems/Combat.js
   ui/HUD.js, HoloMenu.js
+.github/workflows/deploy-pages.yml (build + deploy a GitHub Pages)
 ```
 
 ### Controles Adaptativos
-- **PC**: WASD mover, Q/E subir/bajar, Ratón mirar (pointer lock al click si HUD visible), Click izq disparar, F alternativo, 1/2 arma, Shift boost, Espacio recolectar/depositar, C cámara, ESC/P pausa
-- **Móvil**: Joystick izq movimiento, der cámara, botones 🔫🚀📦📷, táctil full, vibración futura
-- **TV/Gamepad**: Stick izq mover, der mirar, A recolectar, RT disparar, Y cámara, B boost, D-pad UI
+- **PC**: WASD mover, Q/E subir/bajar, Ratón mirar (el puntero se captura al iniciar; ESC lo libera y pausa), Click izq disparar, F alternativo, 1/2 arma, Shift boost, Espacio depositar en refinería, C cámara, ESC/P pausa, botón ❚❚ en el HUD
+- **Móvil**: Joystick izq movimiento, der cámara, botones 🔫🚀📦📷 y ▲▼ (subir/bajar)
+- **TV/Gamepad**: Stick izq mover, der mirar, A/X depositar, RT/RB disparar, Y cámara, B/LT boost, D-pad ▲▼ subir/bajar, Start pausa
 
 ## 📦 Recursos del Repositorio Usados
 
-- `scene.gltf` + `scene.bin` + `textures/material_0_*` → WALL·E modelo principal
-- `textures/earth_baseColor.jpeg`, `mars_`, `jupiter_`, `mercury_`, `venus_`, `saturn_`, `uranus_`, `neptune_`, `moon_`, `saturn_ring_`, `material_baseColor.jpeg` (sol) → Texturas planetas
+- `public/scene.gltf` + `public/scene.bin` + `public/textures/material_0_*` → WALL·E modelo principal
+- `public/textures/earth_baseColor.jpeg`, `mars_`, `jupiter_`, `mercury_`, `venus_`, `saturn_`, `uranus_`, `neptune_`, `moon_`, `saturn_ring_`, `material_baseColor.jpeg` (sol) → Texturas planetas
 
-Todas cargadas con `TextureLoader`, `colorSpace = SRGB`, fallback a color sólido si falla.
+Todas cargadas con `TextureLoader` a través de `assetUrl()` (respeta `import.meta.env.BASE_URL`), `colorSpace = SRGB`, fallback a color sólido si falla.
 
 ## 🛠️ Instalación y Build
 
@@ -117,18 +139,20 @@ npm run build    # dist/
 npm run preview  # preview build
 ```
 
-Build genera `dist/` con assets hasheados, 625kB (163kB gzip) incluyendo Three.js.
+Build genera `dist/` con rutas relativas, Three.js en su propio chunk (~135 kB gzip) y el código del juego (~36 kB gzip), más `textures/` y el modelo GLTF.
 
 ## ✅ Errores Comprobados y Solucionados
 
 Ver `IDEAS_MEJORA.md` sección checklist. Resumen:
-- Texturas 404 → path absoluto `/textures/...` y `setPath('/')`
-- Modelo WALL·E → fallback + onError
-- Pointer lock bloqueando menú → solo si HUD visible
-- Joystick vs teclado → umbral
-- Memory leaks → dispose
-- FPS móvil → adaptive DPR + sin sombras
-- Host preview bloqueado → `allowedHosts: true`
+- **El juego no cargaba en GitHub Pages** (se servía el código sin compilar) → workflow de build + deploy, `base: './'`, assets en `public/`
+- Texturas de planetas nunca cargaban (`setPath('/')` generaba `//textures/...`) → `assetUrl()`
+- Movimiento/disparo/boost que no se detenían al soltar la tecla → `InputSystem` reescrito
+- Giro infinito con el ratón y salto al capturar el puntero → delta por frame + filtro
+- A/D invertidos y alabeo al cabecear → eje derecho corregido, Euler `YXZ`
+- ESC no pausaba con el puntero capturado → pausa automática al perder la captura
+- Estrellas invisibles por la niebla, notificaciones tapadas por el menú, `alert()` bloqueante
+- Colisión con sol/planetas, zona segura de aparición, periodo de gracia de enemigos
+- Modelo WALL·E → fallback + onError · Memory leaks → dispose · FPS móvil → adaptive DPR · Host preview → `allowedHosts: true`
 
 ## 💡 Ideas Futuro
 

@@ -2,16 +2,29 @@ import * as THREE from 'three';
 import { ENEMY_TYPES } from '../config/PlanetsConfig.js';
 
 export class EnemySystem {
-  constructor(scene, solarSystem, trashSystem, quality) {
+  constructor(scene, solarSystem, trashSystem, quality, options = {}) {
     this.scene = scene;
     this.solarSystem = solarSystem;
     this.trashSystem = trashSystem;
     this.quality = quality || { enemyCount: 8 };
+    this.options = options || {};
     this.enemies = [];
     this.group = new THREE.Group();
     this.scene.add(this.group);
     this.spawnTimer = 0;
+    // Periodo de gracia: los enemigos no atacan al jugador nada más empezar
+    this.graceTime = 12;
+    this.elapsed = 0;
     try { this.spawnInitial(); } catch (e) { console.error('[Enemy] spawnInitial error:', e); }
+  }
+
+  resetGrace() { this.elapsed = 0; }
+
+  /** True si la posición está demasiado cerca del punto de aparición del jugador. */
+  _tooCloseToPlayerSpawn(pos) {
+    const a = this.options.avoidPosition;
+    if (!a) return false;
+    return pos.distanceTo(a) < (this.options.avoidRadius || 100);
   }
 
   createEnemy(position, typeId = null) {
@@ -78,20 +91,26 @@ export class EnemySystem {
       }
       return;
     }
-    for (let i = 0; i < count; i++) {
+    let spawned = 0;
+    let attempts = 0;
+    while (spawned < count && attempts < count * 10) {
+      attempts++;
       try {
         const planet = planets[Math.floor(Math.random() * planets.length)];
         const pp = planet.getWorldPosition();
         const angle = Math.random() * Math.PI * 2;
         const dist = planet.config.radius + 15 + Math.random() * 40;
         const pos = new THREE.Vector3(pp.x + Math.cos(angle) * dist, (Math.random() - 0.5) * 20, pp.z + Math.sin(angle) * dist);
-        this.createEnemy(pos);
+        if (this._tooCloseToPlayerSpawn(pos)) continue;
+        if (this.createEnemy(pos)) spawned++;
       } catch (e) { /* skip */ }
     }
   }
 
   update(delta, walle, combatSystem) {
     try {
+      this.elapsed += delta;
+      const canAttack = this.elapsed > this.graceTime;
       this.spawnTimer += delta;
       if (this.spawnTimer > 12 && this.enemies.length < ((this.quality.enemyCount || 8) * 1.5)) {
         this.spawnTimer = 0;
@@ -100,7 +119,8 @@ export class EnemySystem {
             const planet = this.solarSystem.planets[Math.floor(Math.random() * this.solarSystem.planets.length)];
             const pp = planet.getWorldPosition();
             const pos = pp.clone().add(new THREE.Vector3((Math.random() - 0.5) * 50, (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 50));
-            this.createEnemy(pos);
+            // No aparecer encima del jugador
+            if (!walle || pos.distanceTo(walle.position) > 60) this.createEnemy(pos);
           } catch (e) { /* skip */ }
         }
       }
@@ -112,13 +132,16 @@ export class EnemySystem {
 
           e.shootCooldown -= delta;
 
-          const distToPlayer = walle ? e.mesh.position.distanceTo(walle.position) : 0;
-          const canSeePlayer = distToPlayer < 70;
+          const distToPlayer = walle ? e.mesh.position.distanceTo(walle.position) : Infinity;
+          const canSeePlayer = canAttack && distToPlayer < 70;
 
           if (canSeePlayer && distToPlayer < 45) {
             e.state = 'chasePlayer';
             e.targetPlayer = true;
             e.lastSeenPlayer = 0;
+          } else if (e.state === 'chasePlayer' && !canAttack) {
+            e.state = 'patrol';
+            e.targetPlayer = false;
           } else if (e.state === 'chasePlayer') {
             e.lastSeenPlayer += delta;
             if (e.lastSeenPlayer > 6) {
@@ -209,7 +232,7 @@ export class EnemySystem {
   }
 
   checkPlayerCollision(walle, combatSystem) {
-    if (!walle) return;
+    if (!walle || this.elapsed <= this.graceTime) return;
     for (const e of this.enemies) {
       try {
         if (e.mesh.position.distanceTo(walle.position) < (e.config.scale + 2.5)) {
