@@ -175,6 +175,7 @@ export class TrashSystem {
             t.collected = true;
             this.group.remove(t.mesh);
             t.mesh.geometry.dispose();
+            if (t.mesh.material) t.mesh.material.dispose();
             this.trashList.splice(i, 1);
             collected++;
             // Respawn dinámico

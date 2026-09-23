@@ -1,16 +1,35 @@
 /**
- * MobileControls - Joystick virtual + botones
+ * MobileControls - Joystick virtual dual + botones de acción.
+ * Escribe en `input.touch` (canal táctil), que InputSystem combina cada frame.
  */
 export class MobileControls {
   constructor(inputSystem) {
     this.input = inputSystem;
     this.joysticks = {
-      left: { active: false, x: 0, y: 0, base: null, stick: null },
-      right: { active: false, x: 0, y: 0, base: null, stick: null }
+      left: { active: false, pointerId: null, x: 0, y: 0, base: null, stick: null },
+      right: { active: false, pointerId: null, x: 0, y: 0, base: null, stick: null }
     };
-    this.isMobile = (typeof window !== 'undefined') &&
-      ('ontouchstart' in window || (navigator && navigator.maxTouchPoints > 0));
+    this.isMobile = MobileControls.detectTouchUI();
     try { this.initDOM(); } catch (e) { console.error('[MobileControls] initDOM error:', e); }
+  }
+
+  static detectTouchUI() {
+    if (typeof window === 'undefined') return false;
+    try {
+      const coarse = window.matchMedia('(pointer: coarse)').matches;
+      const hover = window.matchMedia('(hover: hover)').matches;
+      const hasTouch = 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
+      // Móvil/tablet: puntero principal grueso sin hover. Portátiles táctiles no cuentan.
+      return (coarse && !hover) || (hasTouch && Math.min(window.innerWidth, window.innerHeight) <= 820 && coarse);
+    } catch (e) {
+      return 'ontouchstart' in window && (navigator.maxTouchPoints || 0) > 0;
+    }
+  }
+
+  setVisible(visible) {
+    const container = document.getElementById('mobile-controls');
+    if (!container) return;
+    container.classList.toggle('visible', !!visible);
   }
 
   initDOM() {
@@ -24,101 +43,113 @@ export class MobileControls {
       if (!zone) return;
       const base = zone.querySelector('.joystick-base');
       const stick = zone.querySelector('.joystick-stick');
-      this.joysticks[side].base = base;
-      this.joysticks[side].stick = stick;
+      if (!base || !stick) return;
+      const js = this.joysticks[side];
+      js.base = base;
+      js.stick = stick;
 
-      let startX = 0, startY = 0, baseRect = null;
+      let centerX = 0, centerY = 0;
+      const maxDist = 45;
+
+      const apply = (nx, ny) => {
+        stick.style.transform = `translate(calc(-50% + ${nx}px), calc(-50% + ${ny}px))`;
+        js.x = nx / maxDist;
+        js.y = ny / maxDist;
+        if (side === 'left') {
+          this.input.touch.moveX = js.x;
+          this.input.touch.moveY = -js.y;
+        } else {
+          this.input.touch.lookX = js.x;
+          this.input.touch.lookY = js.y;
+        }
+      };
 
       const onStart = (e) => {
         try {
+          if (js.active) return;
           e.preventDefault();
-          const t = e.touches ? e.touches[0] : e;
-          baseRect = base.getBoundingClientRect();
-          startX = baseRect.left + baseRect.width / 2;
-          startY = baseRect.top + baseRect.height / 2;
-          this.joysticks[side].active = true;
-        } catch (err) {}
+          const rect = base.getBoundingClientRect();
+          centerX = rect.left + rect.width / 2;
+          centerY = rect.top + rect.height / 2;
+          js.active = true;
+          js.pointerId = e.pointerId;
+          try { base.setPointerCapture(e.pointerId); } catch (err) { /* noop */ }
+          onMove(e);
+        } catch (err) { /* noop */ }
       };
 
       const onMove = (e) => {
-        if (!this.joysticks[side].active) return;
+        if (!js.active || e.pointerId !== js.pointerId) return;
         try {
           e.preventDefault();
-          const t = e.touches ? e.touches[0] : e;
-          const dx = t.clientX - startX;
-          const dy = t.clientY - startY;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          const maxDist = 45;
-          const angle = Math.atan2(dy, dx);
+          const dx = e.clientX - centerX;
+          const dy = e.clientY - centerY;
+          const dist = Math.hypot(dx, dy);
           const clamped = Math.min(dist, maxDist);
-          const nx = Math.cos(angle) * clamped;
-          const ny = Math.sin(angle) * clamped;
-
-          stick.style.transform = `translate(calc(-50% + ${nx}px), calc(-50% + ${ny}px))`;
-          this.joysticks[side].x = nx / maxDist;
-          this.joysticks[side].y = ny / maxDist;
-
-          if (side === 'left') {
-            this.input.moveX = this.joysticks[side].x;
-            this.input.moveY = -this.joysticks[side].y;
-          } else {
-            this.input.lookX = this.joysticks[side].x * 2.5;
-            this.input.lookY = this.joysticks[side].y * 2.5;
-          }
-        } catch (err) {}
+          const angle = Math.atan2(dy, dx);
+          apply(Math.cos(angle) * clamped, Math.sin(angle) * clamped);
+        } catch (err) { /* noop */ }
       };
 
       const onEnd = (e) => {
+        if (!js.active || (e && e.pointerId !== undefined && e.pointerId !== js.pointerId)) return;
         try {
-          this.joysticks[side].active = false;
-          stick.style.transform = `translate(-50%, -50%)`;
-          this.joysticks[side].x = 0;
-          this.joysticks[side].y = 0;
+          js.active = false;
+          js.pointerId = null;
+          stick.style.transform = 'translate(-50%, -50%)';
+          js.x = 0; js.y = 0;
           if (side === 'left') {
-            this.input.moveX = 0; this.input.moveY = 0;
+            this.input.touch.moveX = 0; this.input.touch.moveY = 0;
           } else {
-            this.input.lookX = 0; this.input.lookY = 0;
+            this.input.touch.lookX = 0; this.input.touch.lookY = 0;
           }
-        } catch (err) {}
+        } catch (err) { /* noop */ }
       };
 
-      base.addEventListener('touchstart', onStart, { passive: false });
-      base.addEventListener('touchmove', onMove, { passive: false });
-      base.addEventListener('touchend', onEnd, { passive: false });
-      base.addEventListener('mousedown', onStart);
-      window.addEventListener('mousemove', onMove);
-      window.addEventListener('mouseup', onEnd);
+      // Pointer Events unifica táctil y ratón; setPointerCapture permite arrastrar fuera de la base
+      base.addEventListener('pointerdown', onStart);
+      base.addEventListener('pointermove', onMove);
+      base.addEventListener('pointerup', onEnd);
+      base.addEventListener('pointercancel', onEnd);
+      base.addEventListener('lostpointercapture', onEnd);
+      base.style.touchAction = 'none';
     });
 
     // Botones acción
     document.querySelectorAll('.mob-btn').forEach(btn => {
       try {
         const action = btn.dataset.action;
-        const handle = (e) => {
+        btn.style.touchAction = 'none';
+        const press = (e) => {
           try {
             e.preventDefault();
-            if (action === 'shoot') this.input.shooting = true;
-            if (action === 'boost') this.input.boost = true;
-            if (action === 'collect') this.input.collect = true;
-            if (action === 'camera') this.input.toggleCamera = true;
-          } catch (err) {}
+            if (action === 'shoot') this.input.touch.shoot = true;
+            if (action === 'boost') this.input.touch.boost = true;
+            if (action === 'collect') this.input.touch.collect = true;
+            if (action === 'up') this.input.touch.up = true;
+            if (action === 'down') this.input.touch.down = true;
+            if (action === 'camera') this.input.requestCameraToggle();
+          } catch (err) { /* noop */ }
         };
-        const handleEnd = (e) => {
+        const release = () => {
           try {
-            if (action === 'shoot') this.input.shooting = false;
-            if (action === 'boost') this.input.boost = false;
-            if (action === 'collect') this.input.collect = false;
-          } catch (err) {}
+            if (action === 'shoot') this.input.touch.shoot = false;
+            if (action === 'boost') this.input.touch.boost = false;
+            if (action === 'collect') this.input.touch.collect = false;
+            if (action === 'up') this.input.touch.up = false;
+            if (action === 'down') this.input.touch.down = false;
+          } catch (err) { /* noop */ }
         };
-        btn.addEventListener('touchstart', handle, { passive: false });
-        btn.addEventListener('touchend', handleEnd, { passive: false });
-        btn.addEventListener('mousedown', handle);
-        btn.addEventListener('mouseup', handleEnd);
+        btn.addEventListener('pointerdown', press);
+        btn.addEventListener('pointerup', release);
+        btn.addEventListener('pointercancel', release);
+        btn.addEventListener('pointerleave', release);
+        btn.addEventListener('contextmenu', e => e.preventDefault());
       } catch (e) { /* skip btn */ }
     });
   }
 
   update() {
-    // suavizado opcional
+    // Sin suavizado adicional por ahora
   }
 }

@@ -127,18 +127,6 @@ try {
       window.game = game;
       window.__gameInitialized = true;
 
-      // Registro Service Worker opcional para PWA / offline (optimización)
-      if ('serviceWorker' in navigator) {
-        console.log('[PWA] Service Worker soportado');
-      }
-
-      // Detección de visibilidad para pausar
-      document.addEventListener('visibilitychange', () => {
-        if (document.hidden && game.isPlaying) {
-          console.log('[Game] Tab oculto');
-        }
-      });
-
       // Mensaje bienvenida consola
       console.log(
         `%c WALL·E SISTEMA SOLAR %c
@@ -148,7 +136,8 @@ Controles:
   Ratón / Joystick derecho -> Mirar
   Click / F -> Disparar
   1/2 -> Cambiar arma (Láser / Plasma)
-  ESPACIO -> Recolectar / Depositar en refinería
+  Q / E -> Subir / Bajar
+  ESPACIO -> Depositar en refinería
   C -> Cambiar cámara (1ra / 3ra persona)
   Shift -> Boost
   ESC / P -> Pausa

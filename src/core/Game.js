@@ -27,6 +27,11 @@ export class Game {
     this.clock = new THREE.Clock();
     this.isPlaying = false;
     this.isPaused = false;
+    this.hasStarted = false;
+    this._idleAngle = 0;
+    this._won = false;
+    this._lastShoot = 0;
+    this._lastOverheatNotify = 0;
 
     // Banderas de subsistemas inicializados
     this._sys = {
@@ -35,7 +40,6 @@ export class Game {
       civ: false, hud: false, menu: false, mobile: false
     };
 
-    // Guardar referencias opcionales (pueden no existir si falla)
     this.input = null;
     this.adaptive = null;
     this.quality = null;
@@ -88,6 +92,7 @@ export class Game {
     try {
       this.walle = new WallE(this.scene, this.camera);
       this._sys.walle = true;
+      this._placeWalleAtStart();
     } catch (err) {
       console.error('[Game] WallE error:', err);
     }
@@ -110,7 +115,10 @@ export class Game {
 
     try {
       if (this.solarSystem && this.trashSystem) {
-        this.enemySystem = new EnemySystem(this.scene, this.solarSystem, this.trashSystem, this.quality);
+        this.enemySystem = new EnemySystem(this.scene, this.solarSystem, this.trashSystem, this.quality, {
+          avoidPosition: this.walle ? this.walle.position.clone() : null,
+          avoidRadius: 110
+        });
         this._sys.enemy = true;
       }
     } catch (err) {
@@ -137,6 +145,7 @@ export class Game {
 
     try {
       this.hud = new HUD();
+      this.hud.onPause = () => this.pauseGame();
       this._sys.hud = true;
     } catch (err) {
       console.error('[Game] HUD error:', err);
@@ -160,7 +169,7 @@ export class Game {
 
     // Luz hemisférica adicional para visibilidad de WALL-E
     try {
-      const hemi = new THREE.HemisphereLight(0x606060, 0x202030, 0.8);
+      const hemi = new THREE.HemisphereLight(0x8899bb, 0x202030, 0.6);
       this.scene.add(hemi);
     } catch (err) {
       console.error('[Game] HemisphereLight error:', err);
@@ -169,7 +178,19 @@ export class Game {
     // Vincular callback de civilización si ambos existen
     if (this.civilization && this.menu) {
       this.civilization.onUpdate = () => {
-        try { this.menu.updateMaterials(); } catch(e) { /* noop */ }
+        try { this.menu.updateMaterials(); } catch (e) { /* noop */ }
+      };
+      try { this.menu.updateMaterials(); } catch (e) { /* noop */ }
+    }
+
+    // Al perder la captura del puntero (ESC en el navegador) pausamos: el
+    // keydown de Escape no llega a la página mientras el puntero está capturado.
+    if (this.input) {
+      this.input.onPointerLockLost = () => {
+        if (this.isPlaying && !this.input.isTouchDevice()) this.pauseGame();
+      };
+      this.input.onPointerLockError = () => {
+        if (this.isPlaying && this.hud) this.hud.notify('Haz clic en la pantalla para capturar el ratón', 'info');
       };
     }
 
@@ -181,10 +202,9 @@ export class Game {
 
     this.animate = this.animate.bind(this);
 
-    // SIEMPRE ocultar loading screen después de un tiempo prudente,
-    // incluso si algún subsistema falló. Si fallaron subsistemas,
-    // el menú holográfico se mostrará de todas formas para no dejar al usuario en negro.
-    this._hideLoadingSafe(1200);
+    // Ocultar loading screen tras un tiempo prudente, incluso si algún
+    // subsistema falló: el menú holográfico se muestra de todas formas.
+    this._hideLoadingSafe(900);
 
     try {
       requestAnimationFrame(this.animate);
@@ -193,7 +213,7 @@ export class Game {
     }
 
     console.log('[Game] Inicializado - Calidad:', this.quality,
-      'Subsistemas OK:', Object.entries(this._sys).filter(([k,v])=>v).map(([k])=>k).join(','));
+      'Subsistemas OK:', Object.entries(this._sys).filter(([k, v]) => v).map(([k]) => k).join(','));
   }
 
   /**
@@ -202,10 +222,12 @@ export class Game {
    */
   _initScene() {
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.FogExp2(0x000000, 0.0012);
+    this.scene.background = new THREE.Color(0x000000);
+    this.scene.fog = new THREE.FogExp2(0x000000, 0.0009);
 
-    this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 3000);
-    this.camera.position.set(0, 20, -40);
+    this.camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 4000);
+    this.camera.position.set(0, 30, -70);
+    this.camera.lookAt(0, 0, 0);
 
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
@@ -214,16 +236,49 @@ export class Game {
       powerPreference: 'high-performance'
     });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.1;
+    this.renderer.toneMappingExposure = 1.15;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
+    // Las rutas se resuelven con assetUrl() en cada entidad (respetan la base
+    // del despliegue). No usar setPath('/') aquí: generaba URLs '//textures/…'.
     this.textureLoader = new THREE.TextureLoader();
-    // setPath fija el prefijo de rutas. Usamos '/' para que rutas '/textures/x' funcionen.
-    this.textureLoader.setPath('/');
+
+    // Si se pierde el contexto WebGL (móvil en segundo plano, GPU saturada)
+    this.canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      console.warn('[Game] Contexto WebGL perdido');
+      if (this.isPlaying) this.pauseGame();
+    });
+    this.canvas.addEventListener('webglcontextrestored', () => {
+      console.log('[Game] Contexto WebGL restaurado');
+    });
+  }
+
+  /** Coloca a WALL·E junto a la Tierra mirando hacia ella. */
+  _placeWalleAtStart() {
+    if (!this.walle) return;
+    try {
+      const earth = this.solarSystem && this.solarSystem.getPlanetById('earth');
+      if (earth) {
+        const ep = earth.getWorldPosition();
+        const outward = ep.clone().normalize();            // dirección sol -> tierra
+        const side = new THREE.Vector3(-outward.z, 0, outward.x); // tangente a la órbita
+        // Entre el sol y la Tierra, mirando hacia ella: se ve su cara iluminada
+        const spawn = ep.clone()
+          .addScaledVector(outward, -(earth.config.radius + 16))
+          .addScaledVector(side, 8)
+          .add(new THREE.Vector3(0, 5, 0));
+        this.walle.placeAt(spawn, ep);
+      } else {
+        this.walle.placeAt(new THREE.Vector3(0, 4, 90), new THREE.Vector3(0, 0, 0));
+      }
+    } catch (e) {
+      console.warn('[Game] No se pudo colocar a WALL·E junto a la Tierra:', e);
+    }
   }
 
   /**
@@ -233,20 +288,18 @@ export class Game {
   _hideLoadingSafe(delay = 0) {
     setTimeout(() => {
       try {
-        // Si ya hay un error fatal visible, no tocar nada
         if (document.getElementById('fatal-error')) return;
 
         const loader = document.getElementById('loading-screen');
         if (loader) {
           loader.classList.add('hidden');
           setTimeout(() => {
-            try { loader.style.display = 'none'; } catch(e) {}
+            try { loader.style.display = 'none'; } catch (e) { /* noop */ }
           }, 800);
         }
 
-        // Si el menú existe, asegurarse de que sea visible
         if (this.menu && this.menu.show) {
-          try { this.menu.show(); } catch(e) {}
+          try { this.menu.show(); } catch (e) { /* noop */ }
         }
       } catch (e) {
         console.error('[Game] Error ocultando loading:', e);
@@ -262,12 +315,13 @@ export class Game {
       try {
         const loader = document.getElementById('loading-screen');
         if (loader) {
+          const detail = ((err && (err.stack || err.message)) || '').replace(/</g, '&lt;');
           loader.innerHTML = `
             <div style="text-align:center;color:#ff3b3b;font-family:Orbitron,monospace;padding:32px;max-width:600px">
               <div style="font-size:3rem;margin-bottom:16px">⚠️</div>
               <h2 style="margin:0 0 16px;letter-spacing:0.2em">ERROR</h2>
               <p style="color:#ffaaaa;line-height:1.6;margin:0 0 16px">${message}</p>
-              <p style="color:#888;font-size:0.75rem">${(err && (err.stack || err.message)) || ''}</p>
+              <p style="color:#888;font-size:0.75rem;white-space:pre-wrap;text-align:left">${detail}</p>
               <button onclick="location.reload()" style="
                 margin-top:24px;padding:12px 32px;background:rgba(255,59,59,0.15);
                 border:1px solid #ff3b3b;color:#ffaaaa;font-family:inherit;
@@ -280,8 +334,7 @@ export class Game {
           loader.style.background = 'radial-gradient(circle at center, #1a0000 0%, #000 100%)';
         }
       } catch (e) {
-        // Último recurso: alert
-        try { alert(message + '\n' + ((err && err.message) || '')); } catch(_) {}
+        try { alert(message + '\n' + ((err && err.message) || '')); } catch (_) { /* noop */ }
       }
     }, 100);
   }
@@ -298,45 +351,60 @@ export class Game {
       }
     });
 
-    // Pausa con ESC o P
-    window.addEventListener('keydown', e => {
-      try {
-        if (e.code === 'Escape' || e.code === 'KeyP') {
-          if (this.isPlaying) this.pauseGame();
-        }
-      } catch (err) {
-        console.error('[Game] keydown error:', err);
-      }
+    // Pausar si la pestaña deja de estar visible
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && this.isPlaying) this.pauseGame();
     });
   }
 
+  // ---------------------------------------------------------------------
+  // Estado de juego
+  // ---------------------------------------------------------------------
+
   startGame() {
     try {
+      if (!this.hasStarted) {
+        this.hasStarted = true;
+        // Los planetas han seguido orbitando durante el menú: recolocar junto a la Tierra
+        this._placeWalleAtStart();
+        this.clock.start();
+      }
       this.isPlaying = true;
       this.isPaused = false;
-      this.clock.start();
+      this._lastStateChange = performance.now();
       if (this.menu) {
         this.menu.hide();
-        this.menu.setContinueVisible && this.menu.setContinueVisible(true);
+        this.menu.setContinueVisible(true);
       }
       if (this.hud) {
         this.hud.show();
         this.hud.notify('¡Misión iniciada! Recolecta basura espacial', 'success');
-        this.hud.notify('WASD mover | Ratón mirar | Click disparar | C cambiar cámara | ESPACIO depositar', 'info');
+        if (this.input && this.input.isTouchDevice()) {
+          this.hud.notify('Joystick izq. mover · der. mirar · 🔫 disparar · 📦 depositar', 'info');
+        } else {
+          this.hud.notify('WASD mover · Ratón mirar · Click disparar · C cámara · ESPACIO depositar · ESC pausa', 'info');
+        }
       }
-      this.canvas.focus();
+      if (this.mobile) this.mobile.setVisible(this.mobile.isMobile);
+      if (this.input) this.input.requestPointerLock();
+      this.canvas.focus({ preventScroll: true });
     } catch (err) {
       console.error('[Game] startGame error:', err);
     }
   }
 
   pauseGame() {
+    if (!this.isPlaying) return;
     try {
       this.isPlaying = false;
       this.isPaused = true;
-      if (this.menu) this.menu.show();
+      this._lastStateChange = performance.now();
+      if (this.menu) {
+        this.menu.setContinueVisible(true);
+        this.menu.show();
+      }
       if (this.hud) this.hud.hide();
-      document.exitPointerLock?.();
+      if (this.input) this.input.exitPointerLock();
     } catch (err) {
       console.error('[Game] pauseGame error:', err);
     }
@@ -344,49 +412,42 @@ export class Game {
 
   resumeGame() {
     if (!this.isPaused) return;
+    this.startGame();
+  }
+
+  /** Reinicia la partida desde el principio (posición, salud, carga). */
+  restartGame() {
     try {
-      this.isPlaying = true;
+      if (this.walle) {
+        this._placeWalleAtStart();
+        this.walle.health = this.walle.maxHealth;
+        this.walle.trashCount = 0;
+        Object.keys(this.walle.materials).forEach(k => { this.walle.materials[k] = 0; });
+        this.walle.ammo.plasma = 50;
+        this.walle.weapon = 'laser';
+      }
+      this._won = false;
       this.isPaused = false;
-      if (this.menu) this.menu.hide();
-      if (this.hud) this.hud.show();
+      this.hasStarted = false;
+      if (this.enemySystem) this.enemySystem.resetGrace();
+      this.startGame();
     } catch (err) {
-      console.error('[Game] resumeGame error:', err);
+      console.error('[Game] restartGame error:', err);
     }
   }
 
+  // ---------------------------------------------------------------------
+  // Lógica por frame
+  // ---------------------------------------------------------------------
+
   handleShooting() {
-    if (!this.isPlaying) return;
-    if (!this.walle || !this.combat) return;
-    if (this.input.shooting) {
-      const now = performance.now();
-      if (!this._lastShoot || now - this._lastShoot > (this.walle.weapon === 'laser' ? 150 : 400)) {
-        this._lastShoot = now;
-        const origin = this.walle.position.clone().add(new THREE.Vector3(0, 0.8, 2).applyQuaternion(this.walle.group.quaternion));
-        const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(this.walle.group.quaternion);
-        if (this.walle.cameraMode === 'first') {
-          const camDir = new THREE.Vector3();
-          this.camera.getWorldDirection(camDir);
-          this.combat.shoot(origin, camDir, this.walle.weapon, 'player');
-        } else {
-          this.combat.shoot(origin, dir, this.walle.weapon, 'player');
-        }
-        if (this.walle.weapon === 'plasma' && this.walle.ammo.plasma > 0) {
-          this.walle.ammo.plasma--;
-        }
-        if (this.walle.weapon === 'plasma' && this.walle.ammo.plasma <= 0) {
-          this.walle.weapon = 'laser';
-          if (this.hud) this.hud.notify('Plasma agotado, cambiando a láser', 'danger');
-        }
-        if (this.hud) this.hud.shootEffect();
-      }
-    }
+    if (!this.isPlaying || !this.walle || !this.combat || !this.input) return;
 
     const ws = this.input.consumeWeaponSwitch();
-    if (ws === 1) {
+    if (ws === 1 && this.walle.weapon !== 'laser') {
       this.walle.weapon = 'laser';
       if (this.hud) this.hud.notify('Arma: LÁSER', 'info');
-    }
-    if (ws === 2) {
+    } else if (ws === 2 && this.walle.weapon !== 'plasma') {
       if (this.walle.ammo.plasma > 0) {
         this.walle.weapon = 'plasma';
         if (this.hud) this.hud.notify('Arma: PLASMA', 'info');
@@ -394,11 +455,37 @@ export class Game {
         this.hud.notify('Sin munición de plasma', 'danger');
       }
     }
+
+    if (!this.input.shooting) return;
+    const now = performance.now();
+    const cadence = this.walle.weapon === 'laser' ? 150 : 400;
+    if (now - this._lastShoot < cadence) return;
+    this._lastShoot = now;
+
+    const q = this.walle.group.quaternion;
+    const origin = this.walle.position.clone().add(new THREE.Vector3(0, 0.8, 2).applyQuaternion(q));
+    let dir;
+    if (this.walle.cameraMode === 'first') {
+      dir = new THREE.Vector3();
+      this.camera.getWorldDirection(dir);
+    } else {
+      dir = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
+    }
+    this.combat.shoot(origin, dir, this.walle.weapon, 'player');
+
+    if (this.walle.weapon === 'plasma') {
+      this.walle.ammo.plasma = Math.max(0, this.walle.ammo.plasma - 1);
+      if (this.walle.ammo.plasma <= 0) {
+        this.walle.weapon = 'laser';
+        if (this.hud) this.hud.notify('Plasma agotado, cambiando a láser', 'danger');
+      }
+    }
+    if (this.hud) this.hud.shootEffect();
   }
 
   handleCollection() {
-    if (!this.isPlaying) return;
-    if (!this.walle) return;
+    if (!this.isPlaying || !this.walle || !this.input) return;
+
     if (this.trashSystem) {
       const collected = this.trashSystem.checkCollection(this.walle, 4.5);
       if (collected > 0 && this.hud) {
@@ -406,17 +493,31 @@ export class Game {
       }
     }
 
-    if (this.input.collect && this.refinery && this.civilization) {
+    const pressed = this.input.consumeCollectPress();
+    if (pressed && this.refinery && this.civilization) {
       const station = this.refinery.checkDeposit(this.walle);
       if (station) {
         const dep = this.walle.deposit();
         const refined = this.refinery.processMaterials(dep.materials, dep.count);
         this.civilization.addMaterials(refined);
-        if (this.hud) this.hud.notify(`Depositado ${dep.count} unidades en ${station.userData.id}. Materiales refinados!`, 'success');
+        if (this.hud) this.hud.notify(`Depositadas ${dep.count} unidades en ${station.userData.label || station.userData.id}. ¡Materiales refinados!`, 'success');
         if (this.combat) this.combat.createExplosion(station.position, 0x00f0ff, 1.2);
-        this.input.collect = false;
+      } else if (this.walle.trashCount > 0 && this.hud) {
+        this.hud.notify('Acércate a una refinería (toroide brillante) para depositar', 'info');
       }
     }
+  }
+
+  /** Cámara cinemática lenta alrededor del sol mientras se muestra el menú. */
+  _updateIdleCamera(delta) {
+    this._idleAngle += delta * 0.05;
+    const r = 75;
+    const x = Math.sin(this._idleAngle) * r;
+    const z = Math.cos(this._idleAngle) * r;
+    const y = 22 + Math.sin(this._idleAngle * 0.5) * 6;
+    const target = new THREE.Vector3(x, y, z);
+    this.camera.position.lerp(target, Math.min(1, delta * 2));
+    this.camera.lookAt(0, 0, 0);
   }
 
   animate() {
@@ -430,34 +531,52 @@ export class Game {
       if (this.mobile) this.mobile.update();
       if (this.adaptive) this.adaptive.update();
 
-      if (this.input && this.walle && this.input.consumeCameraToggle()) {
-        const mode = this.walle.toggleCameraMode();
-        if (this.hud) this.hud.notify(`Cámara: ${mode === 'third' ? 'Tercera persona' : 'Primera persona'}`, 'info');
+      if (this.input && this.input.consumePause()) {
+        // Ignorar peticiones inmediatamente posteriores a un cambio de estado:
+        // al pulsar ESC con el puntero capturado, algunos navegadores entregan el
+        // keydown Y liberan el puntero (lo que ya pausa), y se volvería a reanudar.
+        const sinceChange = performance.now() - (this._lastStateChange || 0);
+        if (sinceChange > 400) {
+          if (this.isPlaying) this.pauseGame();
+          else if (this.isPaused) this.resumeGame();
+        }
       }
 
       if (this.isPlaying) {
-        if (this.walle && this.input && this.solarSystem) this.walle.update(delta, this.input, this.solarSystem);
+        if (this.input && this.walle && this.input.consumeCameraToggle()) {
+          const mode = this.walle.toggleCameraMode();
+          if (this.hud) this.hud.notify(`Cámara: ${mode === 'third' ? 'Tercera persona' : 'Primera persona'}`, 'info');
+        }
+
+        if (this.walle && this.input) this.walle.update(delta, this.input, this.solarSystem);
         if (this.solarSystem) this.solarSystem.update(delta, elapsed);
         if (this.trashSystem && this.walle) this.trashSystem.update(delta, this.walle.position);
-        if (this.enemySystem && this.walle && this.combat) this.enemySystem.update(delta, this.walle, this.combat);
+        if (this.enemySystem && this.walle) this.enemySystem.update(delta, this.walle, this.combat);
         if (this.refinery) this.refinery.update(delta);
-        if (this.combat && this.walle && this.enemySystem && this.trashSystem) {
+        if (this.combat && this.walle) {
           this.combat.update(delta, this.walle, this.enemySystem, this.trashSystem);
         }
-        if (this.enemySystem && this.walle && this.combat) this.enemySystem.checkPlayerCollision(this.walle, this.combat);
+        if (this.enemySystem && this.walle) this.enemySystem.checkPlayerCollision(this.walle, this.combat);
 
         this.handleShooting();
         this.handleCollection();
 
-        if (this.hud && this.walle && this.solarSystem && this.trashSystem && this.civilization && this.refinery) {
+        if (this.walle && this.walle.overheating && this.hud) {
+          const now = performance.now();
+          if (now - this._lastOverheatNotify > 2500) {
+            this._lastOverheatNotify = now;
+            this.hud.notify('🔥 ¡Calor extremo! Aléjate del sol', 'danger');
+          }
+        }
+
+        if (this.hud && this.walle) {
           this.hud.update(this.walle, this.solarSystem, this.trashSystem, this.civilization, this.refinery, delta);
         }
 
         if (this.walle && this.walle.health <= 0) {
-          if (this.hud) this.hud.notify('¡WALL·E destruido! Reiniciando...', 'danger');
-          this.walle.health = this.walle.maxHealth;
-          this.walle.position.set(0, 0, 80);
-          this.walle.velocity.set(0, 0, 0);
+          if (this.hud) this.hud.notify('¡WALL·E destruido! Reiniciando en la Tierra...', 'danger');
+          if (this.combat) this.combat.createExplosion(this.walle.position, 0xffaa00, 1.5);
+          this.walle.respawn();
         }
 
         if (this.civilization && !this._won) {
@@ -467,13 +586,17 @@ export class Game {
             if (this.hud) this.hud.notify('¡FELICIDADES! Has civilizado todo el sistema solar 🌌', 'success');
           }
         }
+      } else if (!this.hasStarted) {
+        // Menú inicial: el sistema solar gira de fondo y la cámara orbita el sol
+        if (this.solarSystem) this.solarSystem.update(delta, elapsed);
+        if (this.refinery) this.refinery.update(delta);
+        this._updateIdleCamera(delta);
       }
 
       if (this.renderer && this.scene && this.camera) {
         try {
           this.renderer.render(this.scene, this.camera);
         } catch (err) {
-          // Si el render falla, no propagamos para no detener el loop
           if (!this._renderErrorLogged) {
             console.error('[Game] render error:', err);
             this._renderErrorLogged = true;

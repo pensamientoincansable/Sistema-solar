@@ -1,5 +1,5 @@
 /* WALL·E Sistema Solar - Estilo Galáctico Holográfico */
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;600&display=swap');
+/* Las fuentes se cargan desde <link> en index.html (evitamos un @import duplicado y bloqueante). */
 
 :root {
   --holo-cyan: #00f0ff;
@@ -65,7 +65,7 @@ html, body {
   box-shadow: var(--holo-glow), inset 0 0 80px rgba(0,240,255,0.05);
   border-radius: 16px;
   position: relative;
-  overflow:hidden;
+  overflow:hidden auto;
 }
 
 .holo-container::before {
@@ -211,6 +211,37 @@ html, body {
 }
 
 .planet-chip span { display:block; font-size:1.2rem; margin-bottom:2px; }
+.planet-chip.selected { background: rgba(0,240,255,0.2); border-color: var(--holo-cyan); box-shadow: 0 0 10px rgba(0,240,255,0.35); }
+
+.planet-info {
+  margin-top:10px;
+  padding:10px 12px;
+  border:1px solid rgba(0,240,255,0.2);
+  border-radius:8px;
+  background: rgba(0,240,255,0.05);
+  font-size:0.72rem;
+  line-height:1.45;
+  min-height:60px;
+}
+.planet-info:empty { display:none; }
+.planet-info-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px; }
+.planet-info-head span { font-size:1.3rem; }
+.planet-info-head strong { font-family:'Orbitron'; letter-spacing:0.1em; color: var(--holo-cyan); }
+.planet-info-head em { font-style:normal; opacity:0.6; font-size:0.65rem; }
+.planet-info-body b { color: var(--holo-yellow); font-weight:600; }
+.planet-info .reqs { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+.planet-info .req {
+  padding:2px 6px; border-radius:10px; font-size:0.65rem;
+  border:1px solid rgba(255,59,59,0.4); background: rgba(255,59,59,0.08);
+}
+.planet-info .req.ok { border-color: rgba(46,204,64,0.5); background: rgba(46,204,64,0.1); }
+
+.holo-card.flash { animation: cardFlash 1.2s ease; }
+@keyframes cardFlash {
+  0% { box-shadow: 0 0 0 rgba(0,240,255,0); border-color: rgba(255,255,255,0.08); }
+  30% { box-shadow: 0 0 24px rgba(0,240,255,0.6); border-color: var(--holo-cyan); }
+  100% { box-shadow: 0 0 0 rgba(0,240,255,0); border-color: rgba(255,255,255,0.08); }
+}
 
 .materials-list {
   display:flex;
@@ -247,6 +278,23 @@ html, body {
 }
 
 /* HUD */
+.hud-pause {
+  position:absolute;
+  top:12px; right:16px;
+  width:40px; height:40px;
+  border-radius:8px;
+  background: rgba(0,15,30,0.75);
+  border:1px solid rgba(0,240,255,0.35);
+  color: var(--holo-cyan);
+  font-size:0.8rem;
+  cursor:pointer;
+  pointer-events:auto;
+  backdrop-filter: blur(10px);
+  transition: background 0.2s, box-shadow 0.2s;
+}
+.hud-pause:hover { background: rgba(0,240,255,0.2); box-shadow: 0 0 12px rgba(0,240,255,0.4); }
+.hud-top { padding-right: 68px !important; }
+
 #hud {
   position:fixed;
   inset:0;
@@ -257,6 +305,7 @@ html, body {
 }
 
 #hud.visible { opacity:1; }
+#hud:not(.visible) * { pointer-events:none !important; }
 
 .hud-top {
   position:absolute;
@@ -431,6 +480,8 @@ html, body {
 }
 
 .mob-btn:active { background: rgba(0,240,255,0.3); transform: scale(0.95); }
+.action-buttons.vertical { right:auto; left:180px; bottom:40px; gap:10px; }
+.mob-btn.small { width:52px; height:52px; font-size:0.9rem; }
 
 /* LOADING */
 #loading-screen {
@@ -472,7 +523,7 @@ html, body {
 #notifications {
   position:fixed;
   top:80px; right:16px;
-  z-index:50;
+  z-index:150; /* por encima del menú holográfico (100) */
   display:flex;
   flex-direction:column;
   gap:8px;
@@ -501,11 +552,17 @@ html, body {
   .mini-map { width:100px; height:100px; }
 }
 
-@media (min-width: 1920px) {
-  /* TV optimization - larger UI */
-  .holo-container { transform: scale(1.2); }
-  .hud-panel { transform: scale(1.2); transform-origin: top left; }
-  .hud-bottom .hud-panel { transform-origin: bottom left; }
+@media (max-width: 900px) {
+  .holo-container { max-height: 94vh; overflow-y: auto; }
+  .holo-left h1 { font-size: 1.6rem; }
+  .holo-btn { padding: 10px 14px; font-size: 0.8rem; }
+  .action-buttons.vertical { left: 170px; bottom: 30px; }
+}
+
+@media (min-width: 2560px) {
+  /* TV / 4K: UI más grande sin transform (no rompe el layout) */
+  html { font-size: 20px; }
+  .mini-map { width:180px; height:180px; }
 }
 
 /* SCROLLBAR */

@@ -12,7 +12,8 @@ export class Refinery {
   init() {
     try {
       // Estación central cerca del sol
-      this.createStation(new THREE.Vector3(0, 12, -25), 'central', 0xffcc00);
+      const central = this.createStation(new THREE.Vector3(0, 12, -25), 'central', 0xffcc00);
+      central.userData.label = 'Refinería Central';
     } catch (e) {
       console.error('[Refinery] Estación central falló:', e);
     }
@@ -25,6 +26,10 @@ export class Refinery {
           const station = this.createStation(stationPos, planet.config.id, planet.config.color);
           station.planetId = planet.config.id;
           station.planet = planet;
+          station.userData.label = `Refinería ${planet.config.name}`;
+          // Posición inicial coherente con la órbita del planeta (update() la mantiene)
+          const pw = planet.getWorldPosition();
+          station.position.set(pw.x, pw.y + 6, pw.z + planet.config.radius + 6);
         } catch (e) {
           console.error(`[Refinery] Estación ${planet.config.id} falló:`, e);
         }

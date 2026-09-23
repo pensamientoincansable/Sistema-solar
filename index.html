@@ -15,6 +15,7 @@
     #loading-screen{position:fixed;inset:0;background:#000;z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center}
     .loader-ring{width:80px;height:80px;border:3px solid rgba(0,240,255,0.1);border-top-color:#00f0ff;border-radius:50%;animation:spin 1s linear infinite}
     @keyframes spin{to{transform:rotate(360deg)}}
+    @keyframes pulse{0%,100%{opacity:.6}50%{opacity:1}}
   </style>
 </head>
 <body>
@@ -22,7 +23,21 @@
   <div id="loading-screen">
     <div class="loader-ring"></div>
     <div style="margin-top:20px;font-family:Orbitron,monospace;letter-spacing:0.3em;color:#00f0ff;animation:pulse 1.5s ease-in-out infinite">INICIANDO SISTEMA SOLAR...</div>
+    <div id="loading-slow" style="display:none;margin-top:18px;max-width:420px;text-align:center;font-family:monospace;font-size:0.8rem;line-height:1.6;color:#ffaaaa">
+      Está tardando más de lo normal.<br>
+      Comprueba tu conexión y recarga la página (Ctrl+F5).<br>
+      Si el problema persiste, abre la consola del navegador (F12) para ver el error.
+    </div>
   </div>
+  <script>
+    // Aviso si el módulo principal no llega a ejecutarse (p. ej. 404 del bundle o navegador sin módulos ES)
+    setTimeout(function () {
+      if (!window.__gameInitialized && !document.getElementById('fatal-error')) {
+        var el = document.getElementById('loading-slow');
+        if (el) el.style.display = 'block';
+      }
+    }, 12000);
+  </script>
 
   <!-- Canvas juego -->
   <canvas id="game-canvas" tabindex="0"></canvas>
@@ -56,6 +71,7 @@
         <div class="holo-card" id="section-planets">
           <h3>🛰️ Mapa Estelar</h3>
           <div class="planet-grid" id="planet-grid"></div>
+          <div id="planet-info" class="planet-info"></div>
           <div style="margin-top:10px;font-size:0.7rem;opacity:0.6">Cada planeta genera basura única y permite una civilización adaptada. Acércate y refina.</div>
         </div>
 
@@ -103,8 +119,9 @@
       <div class="hud-panel">
         <h4>🔫 Armamento</h4>
         <div style="font-family:Orbitron;font-size:0.9rem"><span id="hud-weapon">LÁSER</span> | <span id="hud-ammo" style="color:#ffe600">∞</span></div>
-        <div style="font-size:0.65rem;opacity:0.6;margin-top:4px">1 Láser • 2 Plasma • Click disparar</div>
+        <div style="display:flex;justify-content:space-between;gap:8px;font-size:0.65rem;opacity:0.7;margin-top:4px"><span>1 Láser • 2 Plasma</span><span id="hud-speed">0 u/s</span></div>
       </div>
+      <button id="btn-pause" class="hud-pause" type="button" title="Pausa (ESC / P)" aria-label="Pausa">❚❚</button>
     </div>
 
     <div class="hud-center">
@@ -124,10 +141,10 @@
         <div class="hud-panel" style="min-width:120px">
           <h4>🎮 Controles</h4>
           <div style="font-size:0.65rem;line-height:1.5">
-            WASD + Ratón<br>
-            Shift Boost<br>
-            C Cámara<br>
-            ESPACIO Acción
+            WASD + Ratón · Q/E subir/bajar<br>
+            Shift Boost · Click/F disparar<br>
+            C Cámara · 1/2 arma<br>
+            ESPACIO depositar · ESC pausa
           </div>
         </div>
       </div>
@@ -139,10 +156,14 @@
     <div id="joystick-left" class="joystick-zone"><div class="joystick-base"><div class="joystick-stick"></div></div></div>
     <div id="joystick-right" class="joystick-zone"><div class="joystick-base"><div class="joystick-stick"></div></div></div>
     <div class="action-buttons">
-      <button class="mob-btn" data-action="shoot">🔫</button>
-      <button class="mob-btn" data-action="boost">🚀</button>
-      <button class="mob-btn" data-action="collect">📦</button>
-      <button class="mob-btn" data-action="camera">📷</button>
+      <button class="mob-btn" data-action="shoot" type="button" aria-label="Disparar">🔫</button>
+      <button class="mob-btn" data-action="boost" type="button" aria-label="Boost">🚀</button>
+      <button class="mob-btn" data-action="collect" type="button" aria-label="Depositar">📦</button>
+      <button class="mob-btn" data-action="camera" type="button" aria-label="Cámara">📷</button>
+    </div>
+    <div class="action-buttons vertical">
+      <button class="mob-btn small" data-action="up" type="button" aria-label="Subir">▲</button>
+      <button class="mob-btn small" data-action="down" type="button" aria-label="Bajar">▼</button>
     </div>
   </div>
 
