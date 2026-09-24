@@ -1,0 +1,342 @@
+{
+  "accessors": [
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 2196,
+      "max": [
+        3.5148119926452637,
+        1.894700050354004,
+        0.3497999906539917
+      ],
+      "min": [
+        -4.817709922790527,
+        -2.2208001613616943,
+        -0.350600004196167
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "byteOffset": 26352,
+      "componentType": 5126,
+      "count": 2196,
+      "max": [
+        0.9997241497039795,
+        0.43065929412841797,
+        0.12314579635858536
+      ],
+      "min": [
+        -0.996468186378479,
+        -0.6823304295539856,
+        -0.12304214388132095
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 0,
+      "componentType": 5125,
+      "count": 13248,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 1,
+      "byteOffset": 52704,
+      "componentType": 5126,
+      "count": 7848,
+      "max": [
+        5.413760185241699,
+        2.0406713485717773,
+        0.5330307483673096
+      ],
+      "min": [
+        -4.134275436401367,
+        -2.0444910526275635,
+        -0.5336996912956238
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "byteOffset": 146880,
+      "componentType": 5126,
+      "count": 7848,
+      "max": [
+        0.9999808669090271,
+        0.9999239444732666,
+        0.5183794498443604
+      ],
+      "min": [
+        -1.0,
+        -0.9999973177909851,
+        -0.5173826217651367
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 0,
+      "byteOffset": 52992,
+      "componentType": 5125,
+      "count": 54048,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 1,
+      "byteOffset": 241056,
+      "componentType": 5126,
+      "count": 3960,
+      "max": [
+        6.200599670410156,
+        2.456700086593628,
+        1.1466000080108643
+      ],
+      "min": [
+        -5.518299579620361,
+        -2.7720999717712402,
+        -1.1474000215530396
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "byteOffset": 288576,
+      "componentType": 5126,
+      "count": 3960,
+      "max": [
+        0.9964428544044495,
+        0.9618959426879883,
+        0.24670866131782532
+      ],
+      "min": [
+        -0.9988620281219482,
+        -0.9999934434890747,
+        -0.2474476397037506
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 0,
+      "byteOffset": 269184,
+      "componentType": 5125,
+      "count": 21360,
+      "type": "SCALAR"
+    }
+  ],
+  "asset": {
+    "extras": {
+      "author": "Axelcach (https://sketchfab.com/Axelcach)",
+      "license": "CC-BY-NC-SA-4.0 (http://creativecommons.org/licenses/by-nc-sa/4.0/)",
+      "source": "https://sketchfab.com/3d-models/pet-4ff75327be124d26bffdc835b816fb3c",
+      "title": "PET"
+    },
+    "generator": "Sketchfab-13.42.0",
+    "version": "2.0"
+  },
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteLength": 354624,
+      "name": "floatBufferViews",
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteLength": 336096,
+      "byteOffset": 354624,
+      "byteStride": 12,
+      "name": "floatBufferViews",
+      "target": 34962
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 690720,
+      "uri": "scene.bin"
+    }
+  ],
+  "materials": [
+    {
+      "doubleSided": true,
+      "name": "kff0d0d",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          1.0,
+          0.055,
+          0.055,
+          1.0
+        ],
+        "metallicFactor": 0.0,
+        "roughnessFactor": 0.9485803558586773
+      }
+    },
+    {
+      "doubleSided": true,
+      "name": "k909090",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.566,
+          0.566,
+          0.566,
+          1.0
+        ],
+        "metallicFactor": 0.0,
+        "roughnessFactor": 0.8862730656684317
+      }
+    },
+    {
+      "doubleSided": true,
+      "name": "kffffff",
+      "pbrMetallicRoughness": {
+        "metallicFactor": 0.0,
+        "roughnessFactor": 0.7990690206156037
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "name": "PET_kff0d0d_0",
+      "primitives": [
+        {
+          "attributes": {
+            "NORMAL": 1,
+            "POSITION": 0
+          },
+          "indices": 2,
+          "material": 0,
+          "mode": 4
+        }
+      ]
+    },
+    {
+      "name": "PET_k909090_0",
+      "primitives": [
+        {
+          "attributes": {
+            "NORMAL": 4,
+            "POSITION": 3
+          },
+          "indices": 5,
+          "material": 1,
+          "mode": 4
+        }
+      ]
+    },
+    {
+      "name": "PET_kffffff_0",
+      "primitives": [
+        {
+          "attributes": {
+            "NORMAL": 7,
+            "POSITION": 6
+          },
+          "indices": 8,
+          "material": 2,
+          "mode": 4
+        }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "children": [
+        1
+      ],
+      "matrix": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        2.220446049250313e-16,
+        -1.0,
+        0.0,
+        0.0,
+        1.0,
+        2.220446049250313e-16,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "name": "Sketchfab_model"
+    },
+    {
+      "children": [
+        2
+      ],
+      "matrix": [
+        0.009999999776482582,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.009999999776482582,
+        0.0,
+        0.0,
+        -0.009999999776482582,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "name": "af9b4e777b5c404c842edb96855dff05.fbx"
+    },
+    {
+      "children": [
+        3
+      ],
+      "name": "RootNode"
+    },
+    {
+      "children": [
+        4,
+        5,
+        6
+      ],
+      "matrix": [
+        100.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        99.99999999999866,
+        1.6292067073209114e-05,
+        0.0,
+        0.0,
+        -1.6292067073209114e-05,
+        99.99999999999866,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "name": "PET"
+    },
+    {
+      "mesh": 0,
+      "name": "PET_kff0d0d_0"
+    },
+    {
+      "mesh": 1,
+      "name": "PET_k909090_0"
+    },
+    {
+      "mesh": 2,
+      "name": "PET_kffffff_0"
+    }
+  ],
+  "scene": 0,
+  "scenes": [
+    {
+      "name": "Sketchfab_Scene",
+      "nodes": [
+        0
+      ]
+    }
+  ]
+}
