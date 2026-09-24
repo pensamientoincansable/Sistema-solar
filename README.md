@@ -12,6 +12,7 @@
 
 ```bash
 npm install
+npm test          # colonias, guardado, cámara, HUD
 npm run dev
 # Abre http://localhost:5173
 ```
@@ -21,7 +22,7 @@ npm run dev
 ## 🕹️ Controles
 
 ### 📱 Móvil / tablet (Android e iOS)
-Al empezar la primera partida aparece un **tutorial interactivo de 7 pasos** que señala cada control
+Al empezar la primera partida aparece un **tutorial interactivo** que señala cada control
 real con un foco y una flecha (se puede repetir desde *Menú → Tutorial* o *Ajustes → Ver tutorial*).
 
 | Control | Acción |
@@ -44,11 +45,12 @@ resto ≥ 58 px) y en **Ajustes** se puede cambiar su tamaño (85–140 %), la *
 WASD mover · Ratón mirar (clic para capturar el puntero) · Q/E subir/bajar · Shift turbo ·
 Clic/F disparar · 1-4 armas · **Rueda del ratón: distancia de cámara continua desde la tercera persona
 hasta la primera** · V recorre las 4 distancias · C alterna 1ª/3ª persona · Espacio acción
-(mantener = reparar) · R reparar · T tienda · Esc/P pausa.
+(mantener = reparar) · R reparar · T tienda · **G mantén cerca de un planeta = civilizar** ·
+**B visión cinemática 360º** (el mismo botón restaura el ángulo) · **H / ⛶ pantalla completa** · Esc/P pausa.
 
 ### 🎮 Mando / TV
 Stick izq. mover · stick der. mirar · RT/RB disparar · B/LT turbo · A/X acción · LB siguiente arma ·
-Y distancias de cámara · Back tienda · D-pad ▲▼ subir/bajar · Start pausa.
+Y distancias de cámara · Back tienda · D-pad ▲▼ subir/bajar · L3 cinemática · R3 civilizar · Start pausa.
 
 ## 🌟 Características
 
@@ -134,6 +136,10 @@ public/                  estáticos copiados a dist/
   models/                asteroides, gota, OVNI y taxi optimizados (GLB)
   textures/ (+ lowres/)  planetas, sol, luna, anillos
 scripts/optimize-assets.mjs
+tests/                   pruebas de colonia, guardado, cámara, HUD (npm test)
+src/
+  civ/                   simulación RTS (Colony) y modo superficie 3D (CivMode)
+  systems/SaveSystem.js  autoguardado + archivo .json
 src/
   config/PlanetsConfig.js, ShopConfig.js
   core/Game.js (orquestación), Input.js (teclado, ratón, rueda, mando, táctil)

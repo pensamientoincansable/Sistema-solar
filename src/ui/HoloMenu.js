@@ -43,7 +43,10 @@ export class HoloMenu {
       if (this.game.hasStarted) this.game.restartGame();
       else this.game.startGame();
     });
-    $('btn-continue')?.addEventListener('click', () => this.game.resumeGame());
+    $('btn-continue')?.addEventListener('click', () => {
+      if (this.game.hasStarted) this.game.resumeGame();
+      else this.game.loadFromSlot('autosave');
+    });
     document.querySelectorAll('.tab-btn[data-section]').forEach(btn => {
       btn.addEventListener('click', () => this.showSection(btn.dataset.section));
     });
@@ -80,6 +83,7 @@ export class HoloMenu {
     const buildSelect = $('build-planet-select');
     if (buildSelect) buildSelect.innerHTML = PLANETS_CONFIG.map(p => `<option value="${p.id}">${p.emoji} ${p.name}</option>`).join('');
 
+    this._bindSaveSection();
     this._bindSettings();
     if (this.planetInfo) this.showPlanetInfo(PLANETS_CONFIG[2] || PLANETS_CONFIG[0]);
     this.showSection('goal');
@@ -136,15 +140,116 @@ export class HoloMenu {
     toggle('setting-fullscreen', 'fullscreen');
   }
 
+  // ------------------------------------------------------ Partida guardada
+
+  _bindSaveSection() {
+    const $ = (id) => document.getElementById(id);
+    this.saveSlots = $('save-slots');
+    this.saveStatus = $('save-status');
+
+    this.saveSlots?.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-slot-action]');
+      if (!btn || btn.disabled) return;
+      const slot = btn.dataset.slot;
+      const act = btn.dataset.slotAction;
+      const game = this.game;
+      if (!game || !game.save) return;
+      if (act === 'save') game.saveToSlot(slot, this._slotLabel(slot));
+      else if (act === 'load') {
+        const r = game.loadFromSlot(slot);
+        this.setSaveStatus(r.ok ? 'Partida cargada. ¡A jugar!' : (r.reason || 'No se pudo cargar'), r.ok);
+      } else if (act === 'delete') {
+        game.save.remove(slot);
+        this.setSaveStatus(`Hueco borrado`, true);
+      }
+      this.refreshSaves();
+    });
+
+    $('btn-save-export')?.addEventListener('click', () => {
+      this.game.exportSaveFile(this._lastSlot || 'autosave');
+    });
+    $('btn-save-import')?.addEventListener('click', () => { this.game.importSaveFile(); });
+
+    const auto = $('setting-autosave');
+    if (auto) {
+      auto.checked = settings.get('autosave') !== false;
+      auto.addEventListener('change', () => {
+        settings.set('autosave', auto.checked);
+        if (this.game.save) {
+          if (auto.checked) this.game.save.startAutosave();
+          else this.game.save.stopAutosave();
+        }
+        this.setSaveStatus(auto.checked ? 'Autoguardado activado' : 'Autoguardado desactivado', auto.checked);
+      });
+    }
+  }
+
+  _slotLabel(slot) {
+    return slot === 'autosave' ? 'Automático' : slot.replace('slot', 'Hueco ');
+  }
+
+  setSaveStatus(text, ok = false) {
+    if (!this.saveStatus) return;
+    this.saveStatus.textContent = text;
+    this.saveStatus.className = 'save-status ' + (ok ? 'ok' : text ? 'error' : 'muted');
+  }
+
+  /** Lista los huecos de guardado con su fecha y acciones. */
+  refreshSaves() {
+    if (!this.saveSlots || !this.game || !this.game.save) return;
+    try {
+      const list = this.game.save.list();
+      this._lastSlot = list.find(s => !s.empty)?.id || 'autosave';
+      this.saveSlots.innerHTML = list.map((slot) => {
+        const label = this._slotLabel(slot.id);
+        if (slot.empty) {
+          return `<div class="save-slot empty">
+            <div class="save-slot-info"><b>${label}</b><small>Vacío</small></div>
+            <div class="save-slot-actions">
+              <button class="save-mini" data-slot-action="save" data-slot="${slot.id}" type="button">Guardar aquí</button>
+            </div>
+          </div>`;
+        }
+        const d = new Date(slot.savedAt);
+        const when = isNaN(d.getTime()) ? slot.savedAt : `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        const mins = Math.floor((slot.playTime || 0) / 60);
+        return `<div class="save-slot">
+          <div class="save-slot-info"><b>${label}</b>
+            <small>${when} · ${slot.label || ''} · ${mins} min jugados</small></div>
+          <div class="save-slot-actions">
+            <button class="save-mini" data-slot-action="save" data-slot="${slot.id}" type="button">Guardar</button>
+            <button class="save-mini" data-slot-action="load" data-slot="${slot.id}" type="button">Cargar</button>
+            <button class="save-mini danger" data-slot-action="delete" data-slot="${slot.id}" type="button" aria-label="Borrar">✕</button>
+          </div>
+        </div>`;
+      }).join('');
+    } catch (e) {
+      console.error('[HoloMenu] refreshSaves error:', e);
+    }
+  }
+
   show() {
     this.container?.classList.remove('hidden');
+    this.refreshSaves();
+    const hasAuto = this._hasAutosave();
+    this.setContinueVisible(!!this.game.hasStarted || hasAuto);
     const btnPlay = document.getElementById('btn-play');
     if (btnPlay && this.game.hasStarted) {
       btnPlay.innerHTML = '⟲ Nueva misión <small>Reiniciar desde la Tierra</small>';
       btnPlay.classList.remove('active');
       document.getElementById('btn-continue')?.classList.add('active');
+    } else if (btnPlay && hasAuto) {
+      document.getElementById('btn-continue')?.classList.add('active');
     }
     this.updateMaterials();
+  }
+
+  _hasAutosave() {
+    try {
+      return !!(this.game.save && this.game.save.list().some(s => s.id === 'autosave' && !s.empty));
+    } catch (e) {
+      return false;
+    }
   }
 
   hide() { this.container?.classList.add('hidden'); }
@@ -156,6 +261,7 @@ export class HoloMenu {
     document.querySelectorAll('.holo-card').forEach(c => c.classList.toggle('active', c === el));
     document.querySelectorAll('.tab-btn[data-section]').forEach(b => b.classList.toggle('selected', b.dataset.section === section));
     if (section === 'civilization') this.updateMaterials();
+    if (section === 'save') this.refreshSaves();
   }
 
   showPlanetInfo(planet) {
@@ -195,7 +301,10 @@ export class HoloMenu {
       `).join('') || '<div class="muted" style="font-size:0.78rem">Recolecta basura y deposítala en una refinería</div>';
       const prog = this.game.civilization.getProgress();
       const progEl = document.getElementById('civilization-progress');
-      if (progEl) progEl.textContent = `${prog.colonized}/${prog.totalPlanets} planetas (${prog.percent}%) - ${prog.totalBuilt} estructuras`;
+      const colonies = this.game.civ ? this.game.civ.colonies.size : 0;
+      if (progEl) {
+        progEl.textContent = `${prog.colonized}/${prog.totalPlanets} orbitales (${prog.percent}%) · ${colonies} colonia${colonies === 1 ? '' : 's'} en superficie · ${prog.totalBuilt} cúpulas`;
+      }
       if (this._lastPlanetInfo) this.showPlanetInfo(this._lastPlanetInfo);
     } catch (e) {
       console.error('[HoloMenu] updateMaterials error:', e);

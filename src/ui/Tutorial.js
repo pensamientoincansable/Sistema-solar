@@ -43,6 +43,16 @@ export const TOUCH_STEPS = [
     targets: ['#btn-zoom'],
   },
   {
+    title: 'Visión cinemática',
+    text: 'El botón 🎬 activa la VISIÓN CINEMÁTICA: la cámara gira 360º alrededor de WALL·E. Pulsa el mismo botón para salir y la vista vuelve exactamente a su ángulo anterior.',
+    targets: ['#btn-cinematic'],
+  },
+  {
+    title: 'Civilizar un planeta',
+    text: 'Vuela bajo sobre un planeta y MANTÉN el botón 🌍: aterrizarás y empezarás una civilización desde cero (constructores, mineros, leñadores y granjeros). Dentro, arrastra para girar la cámara, toca el terreno para construir y mantén 🌍 otra vez para despegar.',
+    targets: ['#btn-civilize'],
+  },
+  {
     title: 'Pausa, mapa y objetivo',
     text: 'Con PAUSA abres el menú, los ajustes y las civilizaciones. En el minimapa: refinerías ◆, taxi-mercader ▬ amarillo, OVNIs rojos y asteroides naranjas. ¡Recoge basura y 💧 agua (abunda cerca de la Tierra), defiende las refinerías y construye civilizaciones!',
     targets: ['#btn-pause', '.mini-map'],
@@ -72,6 +82,16 @@ export const DESKTOP_STEPS = [
     title: 'Cámara',
     text: 'La RUEDA del ratón acerca o aleja la cámara: desde la tercera persona hasta la primera. V recorre 4 distancias fijas y C alterna 1ª/3ª persona.',
     targets: ['#crosshair'],
+  },
+  {
+    title: 'Civilizar, cinemática y pantalla completa',
+    text: 'Mantén G volando bajo sobre un planeta para ATERRIZAR y fundar una civilización (dentro: WASD mueve la vista, arrastra para girar, rueda para zoom, G o Esc para despegar). B activa la visión cinemática de 360º y se desactiva con la misma tecla, devolviendo el ángulo original. H cambia a pantalla completa.',
+    targets: ['#btn-civilize', '#btn-cinematic'],
+  },
+  {
+    title: 'Partida guardada',
+    text: 'El progreso se guarda solo en este navegador. En el menú (Esc) → 💾 Partida puedes guardarlo en 3 huecos, descargarlo como archivo .json y cargarlo en otro navegador o dispositivo.',
+    targets: ['#btn-save'],
   },
   {
     title: 'Objetivo',

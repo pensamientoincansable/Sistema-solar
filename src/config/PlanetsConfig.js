@@ -186,6 +186,11 @@ export const PLANETS_CONFIG = [
 ];
 
 export const MATERIALS = {
+  // Recursos de las colonias (modo civilizar): no aparecen en la basura espacial
+  food: { name: 'Alimento', color: '#f0b429', icon: '🍞' },
+  wood: { name: 'Madera', color: '#b98a4b', icon: '🪵' },
+  stone: { name: 'Piedra', color: '#b0a391', icon: '🪨' },
+  knowledge: { name: 'Conocimiento', color: '#c08bff', icon: '📚' },
   metal: { name: 'Metal', color: '#a0a0a0', icon: '🔩' },
   polymer: { name: 'Polímero', color: '#ff6b6b', icon: '🧪' },
   glass: { name: 'Vidrio', color: '#7fdbff', icon: '🔷' },

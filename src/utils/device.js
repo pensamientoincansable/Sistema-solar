@@ -43,5 +43,42 @@ export async function enterImmersiveMode() {
     if (screen.orientation && screen.orientation.lock) {
       await screen.orientation.lock('landscape').catch(() => {});
     }
-  } catch (e) { /* iOS / navegadores sin soporte: se juega en ventana */ }
+    return true;
+  } catch (e) { return false; /* iOS / navegadores sin soporte: se juega en ventana */ }
+}
+
+/** True si el documento está a pantalla completa. */
+export function isFullscreen() {
+  try { return !!document.fullscreenElement; } catch (e) { return false; }
+}
+
+/** ¿El navegador admite pantalla completa? (iOS Safari no). */
+export function canFullscreen() {
+  try {
+    return typeof document !== 'undefined'
+      && !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
+  } catch (e) { return false; }
+}
+
+/**
+ * Alterna pantalla completa. Devuelve el estado resultante (true = a pantalla
+ * completa). Hay que llamarlo desde un gesto del usuario (clic o tecla).
+ */
+export async function toggleFullscreen() {
+  try {
+    const el = document.documentElement;
+    if (document.fullscreenElement) {
+      await (document.exitFullscreen ? document.exitFullscreen() : document.webkitExitFullscreen());
+      return false;
+    }
+    if (el.requestFullscreen) await el.requestFullscreen({ navigationUI: 'hide' });
+    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    else return null; // no soportado
+    if (screen.orientation && screen.orientation.lock) {
+      await screen.orientation.lock('landscape').catch(() => {});
+    }
+    return true;
+  } catch (e) {
+    return null;
+  }
 }
