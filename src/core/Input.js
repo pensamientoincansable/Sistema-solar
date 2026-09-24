@@ -22,6 +22,10 @@ import { isTouchUI } from '../utils/device.js';
  * Eventos puntuales (consume*): acción, zoom (rueda), ciclo de cámara, alternar
  * cámara, cambio de arma, tienda y pausa.
  */
+/** Teclas cuyo comportamiento por defecto del navegador se anula en el juego. */
+const BLOCKED_DEFAULTS = ['Space', 'KeyF', 'KeyC', 'KeyV', 'KeyT', 'KeyR', 'KeyB', 'KeyH', 'KeyG',
+  'Digit1', 'Digit2', 'Digit3', 'Digit4', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+
 export class InputSystem {
   constructor(canvas) {
     this.canvas = canvas;
@@ -64,6 +68,14 @@ export class InputSystem {
     this._shootLatch = false;   // garantiza al menos un frame de disparo por click/tap
     this._prevGamepadButtons = {};
     this._ignoreMouseEvents = 0;
+    // Teclas que seguían pulsadas al llamar a releaseAll(): se ignoran sus
+    // autorrepeticiones hasta que el jugador las suelte de verdad. Sin esto,
+    // mantener G para aterrizar volvía a activar civilizeHeld con el
+    // autorrepetir del teclado y al soltar G se salía de la colonia.
+    this._blockedKeys = new Set();
+    // exitPointerLock() pedido por el propio juego (p. ej. al aterrizar): esa
+    // pérdida de captura NO debe interpretarse como "el jugador pulsó Esc".
+    this._expectUnlock = false;
 
     this.onPointerLockLost = null;
     this.onPointerLockError = null;
@@ -81,12 +93,19 @@ export class InputSystem {
       if (tag === 'SELECT' || tag === 'INPUT' || tag === 'TEXTAREA') return;
 
       const code = (e.code || '').toLowerCase();
+      if (this._blockedKeys.has(code)) {
+        if (e.repeat) {
+          // Autorrepetición de una tecla que ya se dio por soltada
+          if (BLOCKED_DEFAULTS.includes(e.code)) e.preventDefault();
+          return;
+        }
+        this._blockedKeys.delete(code);   // pulsación nueva: vuelve a contar
+      }
       const wasDown = !!this.keys[code];
       this.keys[code] = true;
       this.lastDevice = 'keyboard';
 
-      if (['Space', 'KeyF', 'KeyC', 'KeyV', 'KeyT', 'KeyR', 'KeyB', 'KeyH', 'KeyG', 'Digit1', 'Digit2', 'Digit3', 'Digit4',
-        'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+      if (BLOCKED_DEFAULTS.includes(e.code)) {
         e.preventDefault();
       }
       if (e.repeat || wasDown) return; // solo flancos de bajada para eventos
@@ -111,6 +130,7 @@ export class InputSystem {
     window.addEventListener('keyup', e => {
       const code = (e.code || '').toLowerCase();
       this.keys[code] = false;
+      this._blockedKeys.delete(code);
     });
 
     // Si la ventana pierde el foco, soltar todo (evita teclas/botones pegados)
@@ -140,7 +160,13 @@ export class InputSystem {
       this._ignoreMouseEvents = locked ? 2 : 0;
       this._mouseDX = 0;
       this._mouseDY = 0;
-      if (wasLocked && !locked && this.onPointerLockLost) {
+      if (locked) { this._expectUnlock = false; return; }
+      if (wasLocked && this._expectUnlock) {
+        // Liberación pedida por el juego: no es una pausa del jugador
+        this._expectUnlock = false;
+        return;
+      }
+      if (wasLocked && this.onPointerLockLost) {
         try { this.onPointerLockLost(); } catch (e) { /* noop */ }
       }
     });
@@ -185,6 +211,9 @@ export class InputSystem {
 
   /** Suelta todas las entradas mantenidas (pausa, tienda, pérdida de foco). */
   releaseAll() {
+    for (const [code, down] of Object.entries(this.keys)) {
+      if (down) this._blockedKeys.add(code);
+    }
     this.keys = {};
     this.mouse.left = false;
     this.mouse.right = false;
@@ -206,8 +235,14 @@ export class InputSystem {
     } catch (e) { /* algunos navegadores lanzan si no hay gesto */ }
   }
 
+  /** Libera el puntero por decisión del juego (no dispara onPointerLockLost). */
   exitPointerLock() {
-    try { if (document.pointerLockElement) document.exitPointerLock?.(); } catch (e) { /* noop */ }
+    try {
+      if (document.pointerLockElement) {
+        this._expectUnlock = true;
+        document.exitPointerLock?.();
+      }
+    } catch (e) { this._expectUnlock = false; }
   }
 
   isTouchDevice() { return isTouchUI(); }
