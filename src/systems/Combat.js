@@ -1,216 +1,302 @@
 import * as THREE from 'three';
+import { WEAPONS } from '../config/ShopConfig.js';
 
+const _v1 = new THREE.Vector3();
+const _v2 = new THREE.Vector3();
+const _prev = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
+const _desired = new THREE.Vector3();
+
+/** ¿El segmento a→b pasa a menos de r del punto c? */
+function segmentHitsSphere(a, b, c, r) {
+  _v1.subVectors(b, a);
+  const len2 = _v1.lengthSq();
+  let t = 0;
+  if (len2 > 1e-8) {
+    t = _v2.subVectors(c, a).dot(_v1) / len2;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+  }
+  _v2.copy(a).addScaledVector(_v1, t);
+  return _v2.distanceToSquared(c) <= r * r;
+}
+
+/**
+ * CombatSystem - Proyectiles del jugador (4 armas) y de los OVNIs.
+ *
+ * Todo sale de pools: las mallas se crean una vez y se reutilizan
+ * (antes: geometría + material + PointLight nuevas por disparo y setTimeout
+ * por destello, lo que provocaba recompilaciones de shaders y tirones).
+ */
 export class CombatSystem {
-  constructor(scene) {
+  constructor(scene, particles = null) {
     this.scene = scene;
+    this.particles = particles;
     this.projectiles = [];
-    this.explosions = [];
     this.group = new THREE.Group();
+    this.group.name = 'projectiles';
     this.scene.add(this.group);
+    this._pools = {};
+    this._objPool = [];
+    this.maxProjectiles = 160;
+
+    // Callbacks (Game): impactos y bajas
+    this.onPlayerHit = null;    // (damage) => {}
+
+    const glow = (color, opacity) => new THREE.MeshBasicMaterial({
+      color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    this._defs = {
+      laser: { geometry: new THREE.CapsuleGeometry(0.07, 1.5, 3, 6), material: glow(WEAPONS.laser.color, 0.95), orient: true },
+      scatter: { geometry: new THREE.CapsuleGeometry(0.07, 0.8, 3, 6), material: glow(WEAPONS.scatter.color, 0.95), orient: true },
+      plasma: { geometry: new THREE.SphereGeometry(0.42, 12, 10), material: glow(WEAPONS.plasma.color, 0.9), halo: { geometry: new THREE.SphereGeometry(0.85, 10, 8), material: glow(WEAPONS.plasma.color, 0.25) } },
+      missile: { geometry: new THREE.ConeGeometry(0.22, 1.1, 8), material: new THREE.MeshBasicMaterial({ color: 0xfff2a8 }), orient: true },
+      enemy: { geometry: new THREE.SphereGeometry(0.28, 10, 8), material: glow(0xff3344, 0.95), halo: { geometry: new THREE.SphereGeometry(0.6, 10, 8), material: glow(0xff3344, 0.3) } },
+    };
   }
 
-  shoot(origin, direction, type = 'laser', owner = 'player') {
-    try {
-      let geo, mat, speed, damage, life;
-      if (type === 'laser') {
-        geo = new THREE.CapsuleGeometry(0.06, 1.2, 4, 8);
-        mat = new THREE.MeshBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: 0.9 });
-        speed = 90;
-        damage = 25;
-        life = 2.0;
-      } else {
-        geo = new THREE.SphereGeometry(0.35, 12, 12);
-        mat = new THREE.MeshBasicMaterial({ color: 0xff00ff, transparent: true, opacity: 0.9 });
-        speed = 45;
-        damage = 60;
-        life = 3.0;
+  _acquireMesh(type) {
+    const pool = this._pools[type] || (this._pools[type] = []);
+    let mesh = pool.pop();
+    if (!mesh) {
+      const def = this._defs[type];
+      mesh = new THREE.Mesh(def.geometry, def.material);
+      if (def.halo) mesh.add(new THREE.Mesh(def.halo.geometry, def.halo.material));
+      mesh.userData.type = type;
+      this.group.add(mesh);
+    }
+    mesh.visible = true;
+    return mesh;
+  }
+
+  _releaseMesh(mesh) {
+    mesh.visible = false;
+    const pool = this._pools[mesh.userData.type] || (this._pools[mesh.userData.type] = []);
+    pool.push(mesh);
+  }
+
+  _spawn(type, owner, origin, dir, speed, damage, life, radius) {
+    if (this.projectiles.length >= this.maxProjectiles) this._kill(0);
+    const p = this._objPool.pop() || { velocity: new THREE.Vector3() };
+    p.mesh = this._acquireMesh(type);
+    p.mesh.position.copy(origin);
+    p.type = type;
+    p.owner = owner;
+    p.velocity.copy(dir).normalize().multiplyScalar(speed);
+    p.speed = speed;
+    p.damage = damage;
+    p.life = life;
+    p.radius = radius;
+    p.splash = 0;
+    p.homing = 0;
+    p.maxSpeed = speed;
+    p.target = null;
+    p.trailTimer = 0;
+    if (this._defs[type].orient) p.mesh.quaternion.setFromUnitVectors(_up, _v1.copy(dir).normalize());
+    this.projectiles.push(p);
+    return p;
+  }
+
+  _kill(i) {
+    const p = this.projectiles[i];
+    this._releaseMesh(p.mesh);
+    p.mesh = null;
+    p.target = null;
+    const last = this.projectiles.pop();
+    if (i < this.projectiles.length) this.projectiles[i] = last;
+    this._objPool.push(p);
+  }
+
+  /**
+   * Dispara el arma `weaponId` desde `origin` hacia `direction`.
+   * `opts`: { damageMul, target } (target = objetivo inicial de los misiles).
+   */
+  fire(weaponId, origin, direction, opts = {}) {
+    const w = WEAPONS[weaponId];
+    if (!w) return;
+    const dmgMul = opts.damageMul || 1;
+    if (weaponId === 'scatter') {
+      // Base ortonormal alrededor de la dirección para repartir los perdigones
+      const d = _desired.copy(direction).normalize();
+      const side = new THREE.Vector3().crossVectors(d, Math.abs(d.y) > 0.95 ? new THREE.Vector3(1, 0, 0) : _up).normalize();
+      const up = new THREE.Vector3().crossVectors(side, d).normalize();
+      for (let i = 0; i < w.pellets; i++) {
+        const a = (i / w.pellets) * Math.PI * 2 + Math.random() * 0.5;
+        const r = w.spread * (0.4 + Math.random() * 0.6);
+        const dir = new THREE.Vector3().copy(d)
+          .addScaledVector(side, Math.cos(a) * r)
+          .addScaledVector(up, Math.sin(a) * r)
+          .normalize();
+        this._spawn('scatter', 'player', origin, dir, w.speed * (0.92 + Math.random() * 0.16), w.damage * dmgMul, w.life, w.radius);
       }
-
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.copy(origin);
-      if (type === 'laser') {
-        mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.clone().normalize());
+    } else {
+      const p = this._spawn(weaponId, 'player', origin, direction, w.speed, w.damage * dmgMul, w.life, w.radius);
+      p.splash = w.splash || 0;
+      if (weaponId === 'missile') {
+        p.homing = w.homing;
+        p.maxSpeed = w.maxSpeed;
+        p.target = opts.target || null;
       }
-
-      try {
-        const light = new THREE.PointLight(mat.color, 2, 8);
-        mesh.add(light);
-      } catch (e) { /* ignore */ }
-
-      const proj = {
-        mesh,
-        velocity: direction.clone().normalize().multiplyScalar(speed),
-        damage,
-        type,
-        owner,
-        life,
-        maxLife: life
-      };
-
-      this.group.add(mesh);
-      this.projectiles.push(proj);
-
-      this.createMuzzle(origin, mat.color);
-
-      return proj;
-    } catch (e) {
-      console.error('[Combat] shoot error:', e);
-      return null;
+    }
+    if (this.particles) {
+      this.particles.emit(origin.x, origin.y, origin.z, 0, 0, 0, w.color, 1.6, 0.08, 1, 1, 0.9);
     }
   }
 
-  enemyShoot(origin, target, damage = 10) {
-    try {
-      const dir = target.clone().sub(origin).normalize();
-      dir.x += (Math.random() - 0.5) * 0.15;
-      dir.y += (Math.random() - 0.5) * 0.15;
-      dir.z += (Math.random() - 0.5) * 0.15;
-      dir.normalize();
+  /** Compatibilidad con la API anterior. */
+  shoot(origin, direction, type = 'laser') { this.fire(type, origin, direction); }
 
-      const geo = new THREE.SphereGeometry(0.2, 8, 8);
-      const mat = new THREE.MeshBasicMaterial({ color: 0xff3333 });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.copy(origin);
-
-      const proj = {
-        mesh,
-        velocity: dir.multiplyScalar(35),
-        damage,
-        type: 'enemy',
-        owner: 'enemy',
-        life: 3,
-        maxLife: 3
-      };
-      this.group.add(mesh);
-      this.projectiles.push(proj);
-    } catch (e) {
-      console.error('[Combat] enemyShoot error:', e);
-    }
-  }
-
-  createMuzzle(pos, color) {
-    try {
-      const geo = new THREE.SphereGeometry(0.5, 8, 8);
-      const mat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.copy(pos);
-      this.group.add(mesh);
-      setTimeout(() => {
-        try {
-          this.group.remove(mesh);
-          mesh.geometry.dispose();
-        } catch (e) {}
-      }, 80);
-    } catch (e) {
-      console.error('[Combat] createMuzzle error:', e);
-    }
+  enemyShoot(origin, target, damage = 10, speed = 38, spread = 0.12) {
+    const dir = _desired.copy(target).sub(origin).normalize();
+    dir.x += (Math.random() - 0.5) * spread;
+    dir.y += (Math.random() - 0.5) * spread;
+    dir.z += (Math.random() - 0.5) * spread;
+    this._spawn('enemy', 'enemy', origin, dir, speed, damage, 3.2, 0.5);
   }
 
   createExplosion(pos, color = 0xff8800, scale = 1) {
-    try {
-      const count = Math.floor(12 * scale);
-      for (let i = 0; i < count; i++) {
-        try {
-          const geo = new THREE.SphereGeometry(0.15 * scale, 6, 6);
-          const mat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.9 });
-          const mesh = new THREE.Mesh(geo, mat);
-          mesh.position.copy(pos);
-          const vel = new THREE.Vector3((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20);
-          this.explosions.push({ mesh, velocity: vel, life: 0.6 + Math.random() * 0.5, maxLife: 0.8 });
-          this.group.add(mesh);
-        } catch (e) { /* skip particle */ }
+    if (this.particles) this.particles.explosion(pos, color, scale);
+  }
+
+  /** Busca el objetivo más cercano a la línea de tiro (para misiles). */
+  findTarget(origin, dir, ctx, maxDist = 170, minDot = 0.55) {
+    let best = null;
+    let bestScore = -Infinity;
+    const consider = (pos, obj) => {
+      _v1.subVectors(pos, origin);
+      const d = _v1.length();
+      if (d > maxDist || d < 1) return;
+      const dot = _v1.dot(dir) / d;
+      if (dot < minDot) return;
+      const score = dot * 2 - d / maxDist;
+      if (score > bestScore) { bestScore = score; best = obj; }
+    };
+    if (ctx.enemySystem) for (const e of ctx.enemySystem.enemies) if (e.health > 0) consider(e.group.position, e);
+    if (ctx.asteroidSystem) for (const a of ctx.asteroidSystem.asteroids) if (a.alive) consider(a.mesh.position, a);
+    return best;
+  }
+
+  _targetPos(t) {
+    if (!t) return null;
+    if (t.group) return t.health > 0 ? t.group.position : null;  // OVNI
+    if (t.mesh) return t.alive ? t.mesh.position : null;         // asteroide
+    return null;
+  }
+
+  _explodeSplash(pos, radius, damage, ctx, except) {
+    if (ctx.enemySystem) {
+      for (const e of ctx.enemySystem.enemies.slice()) {
+        if (e === except || e.health <= 0) continue;
+        const d = e.group.position.distanceTo(pos);
+        if (d < radius + e.radius) ctx.enemySystem.takeDamage(e, damage * (1 - Math.min(0.7, d / (radius + e.radius))), this);
       }
-      try {
-        const ringGeo = new THREE.RingGeometry(0.1, 0.2, 16);
-        const ringMat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.7, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
-        const ring = new THREE.Mesh(ringGeo, ringMat);
-        ring.position.copy(pos);
-        ring.lookAt(pos.clone().add(new THREE.Vector3(0, 1, 0)));
-        this.explosions.push({ mesh: ring, velocity: new THREE.Vector3(0, 0, 0), life: 0.4, maxLife: 0.4, isRing: true });
-        this.group.add(ring);
-      } catch (e) { /* skip ring */ }
-    } catch (e) {
-      console.error('[Combat] createExplosion error:', e);
+    }
+    if (ctx.asteroidSystem) {
+      for (const a of ctx.asteroidSystem.asteroids.slice()) {
+        if (a === except || !a.alive) continue;
+        const d = a.mesh.position.distanceTo(pos);
+        if (d < radius + a.radius) ctx.asteroidSystem.damage(a, damage * (1 - Math.min(0.7, d / (radius + a.radius))), this);
+      }
     }
   }
 
-  update(delta, walle, enemySystem, trashSystem) {
-    try {
-      // Proyectiles
-      for (let i = this.projectiles.length - 1; i >= 0; i--) {
-        try {
-          const p = this.projectiles[i];
-          p.life -= delta;
-          p.mesh.position.addScaledVector(p.velocity, delta);
+  /**
+   * ctx = { walle, enemySystem, asteroidSystem, trashSystem }
+   */
+  update(delta, ctx) {
+    const { walle, enemySystem, asteroidSystem, trashSystem } = ctx;
+    const particles = this.particles;
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const p = this.projectiles[i];
+      p.life -= delta;
+      _prev.copy(p.mesh.position);
 
-          let hit = false;
+      // Misiles: guiado hacia el objetivo
+      if (p.homing) {
+        let tp = this._targetPos(p.target);
+        if (!tp) {
+          p.target = this.findTarget(p.mesh.position, _desired.copy(p.velocity).normalize(), ctx, 140, 0.3);
+          tp = this._targetPos(p.target);
+        }
+        p.speed = Math.min(p.maxSpeed, p.speed + 60 * delta);
+        if (tp) {
+          _desired.subVectors(tp, p.mesh.position).normalize().multiplyScalar(p.speed);
+          p.velocity.lerp(_desired, Math.min(1, p.homing * delta));
+        }
+        p.velocity.setLength(p.speed);
+        p.mesh.quaternion.setFromUnitVectors(_up, _v1.copy(p.velocity).normalize());
+        p.trailTimer -= delta;
+        if (particles && p.trailTimer <= 0) {
+          p.trailTimer = 0.02;
+          particles.trail(p.mesh.position, 0xffaa33, 0.9, 0.35, 0.7);
+        }
+      }
 
-          if (p.owner === 'player' && enemySystem) {
-            for (const enemy of enemySystem.enemies) {
-              if (p.mesh.position.distanceTo(enemy.mesh.position) < (enemy.config.scale + 1)) {
-                enemySystem.takeDamage(enemy, p.damage, this);
-                hit = true;
-                break;
-              }
-            }
-            if (!hit && p.type === 'plasma' && trashSystem) {
-              for (let j = trashSystem.trashList.length - 1; j >= 0; j--) {
-                const t = trashSystem.trashList[j];
-                if (p.mesh.position.distanceTo(t.mesh.position) < 2) {
-                  try {
-                    trashSystem.spawnNear(t.mesh.position, 2);
-                    trashSystem.group.remove(t.mesh);
-                    trashSystem.trashList.splice(j, 1);
-                    this.createExplosion(t.mesh.position, t.config.color, 0.5);
-                  } catch (e) {}
-                  hit = true;
-                  break;
-                }
-              }
-            }
-          } else if (p.owner === 'enemy' && walle) {
-            if (p.mesh.position.distanceTo(walle.position) < 3) {
-              try { walle.takeDamage(p.damage); } catch (e) {}
-              this.createExplosion(p.mesh.position, 0xff0000, 0.4);
+      p.mesh.position.addScaledVector(p.velocity, delta);
+      const pos = p.mesh.position;
+      let hit = false;
+
+      if (p.owner === 'player') {
+        if (enemySystem) {
+          for (let k = 0; k < enemySystem.enemies.length; k++) {
+            const e = enemySystem.enemies[k];
+            if (e.health <= 0) continue;
+            if (segmentHitsSphere(_prev, pos, e.group.position, e.radius + p.radius)) {
+              enemySystem.takeDamage(e, p.damage, this);
+              if (p.splash) this._explodeSplash(pos, p.splash, p.damage * 0.5, ctx, e);
+              if (particles) particles.hit(pos, this._defs[p.type].material.color, 7);
               hit = true;
+              break;
             }
           }
-
-          if (hit || p.life <= 0) {
-            try {
-              this.group.remove(p.mesh);
-              p.mesh.geometry.dispose();
-            } catch (e) {}
-            this.projectiles.splice(i, 1);
+        }
+        if (!hit && asteroidSystem) {
+          for (let k = 0; k < asteroidSystem.asteroids.length; k++) {
+            const a = asteroidSystem.asteroids[k];
+            if (!a.alive) continue;
+            if (segmentHitsSphere(_prev, pos, a.mesh.position, a.radius + p.radius)) {
+              asteroidSystem.damage(a, p.damage, this);
+              if (p.splash) this._explodeSplash(pos, p.splash, p.damage * 0.5, ctx, a);
+              if (particles) particles.hit(pos, 0xffcc88, 8);
+              hit = true;
+              break;
+            }
           }
-        } catch (e) { /* skip projectile */ }
+        }
+        // El plasma y los misiles rompen la basura en trozos (más piezas que recoger)
+        if (!hit && trashSystem && (p.type === 'plasma' || p.type === 'missile')) {
+          const list = trashSystem.trashList;
+          for (let j = list.length - 1; j >= 0; j--) {
+            const t = list[j];
+            if (t.collected) continue;
+            if (t.mesh.position.distanceToSquared(pos) < 4) {
+              const tpos = _v2.copy(t.mesh.position);
+              const typeId = t.config.id;
+              if (particles) particles.explosion(tpos, t.config.color, 0.45);
+              trashSystem.removeTrash(t);
+              trashSystem.spawnNear(tpos, 2, [typeId]);
+              hit = true;
+              break;
+            }
+          }
+        }
+      } else if (p.owner === 'enemy' && walle) {
+        if (segmentHitsSphere(_prev, pos, walle.position, 1.9)) {
+          walle.takeDamage(p.damage);
+          if (particles) particles.explosion(pos, 0xff3344, 0.35);
+          if (this.onPlayerHit) this.onPlayerHit(p.damage);
+          hit = true;
+        }
       }
 
-      // Explosiones
-      for (let i = this.explosions.length - 1; i >= 0; i--) {
-        try {
-          const ex = this.explosions[i];
-          ex.life -= delta;
-          ex.mesh.position.addScaledVector(ex.velocity, delta);
-          ex.velocity.multiplyScalar(0.98);
-          if (ex.isRing) {
-            ex.mesh.scale.multiplyScalar(1 + delta * 8);
-            ex.mesh.material.opacity = ex.life / ex.maxLife;
-          } else {
-            ex.mesh.material.opacity = ex.life / ex.maxLife;
-            ex.mesh.scale.multiplyScalar(1 + delta * 2);
-          }
-          if (ex.life <= 0) {
-            try {
-              this.group.remove(ex.mesh);
-              ex.mesh.geometry.dispose();
-            } catch (e) {}
-            this.explosions.splice(i, 1);
-          }
-        } catch (e) { /* skip explosion */ }
+      if (hit || p.life <= 0) {
+        if (!hit && p.type === 'missile' && particles) particles.explosion(pos, 0xffaa33, 0.6);
+        else if (hit && p.type === 'missile' && particles) particles.explosion(pos, 0xffaa33, 1.1);
+        this._kill(i);
       }
-    } catch (e) {
-      console.error('[Combat] update error:', e);
     }
+  }
+
+  clear() {
+    for (let i = this.projectiles.length - 1; i >= 0; i--) this._kill(i);
   }
 }

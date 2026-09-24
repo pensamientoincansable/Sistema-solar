@@ -5,11 +5,14 @@ import { assetUrl } from '../utils/assets.js';
  * Carga una textura desde public/ con fallback silencioso.
  * Devuelve la textura (que se rellena de forma asíncrona) o null si no hay ruta.
  */
-function loadTexture(textureLoader, path, onError) {
+function loadTexture(textureLoader, path, onError, lowres = false) {
   if (!path || !textureLoader) return null;
   try {
+    // En móvil se usan las versiones 1024×512 (public/textures/lowres): 4× menos
+    // memoria de GPU y ~10× menos descarga que las originales de 2048×1024.
+    const finalPath = (lowres && /_baseColor\.jpe?g$/.test(path)) ? path.replace('textures/', 'textures/lowres/') : path;
     const tex = textureLoader.load(
-      assetUrl(path),
+      assetUrl(finalPath),
       undefined,
       undefined,
       () => {
@@ -27,13 +30,17 @@ function loadTexture(textureLoader, path, onError) {
 }
 
 export class Planet {
-  constructor(config, textureLoader) {
+  constructor(config, textureLoader, options = {}) {
     this.config = config;
+    const lowres = !!options.lowres;
+    // Posición en el mundo cacheada una vez por frame (ver update()).
+    this.worldPosition = new THREE.Vector3();
     this.group = new THREE.Group();
     this.group.name = config.id;
 
     // Segmentos según tamaño: los gigantes gaseosos se ven de cerca más a menudo
-    const segments = config.radius >= 9 ? 64 : 48;
+    // En móvil (lowres) menos teselación: la diferencia no se aprecia en pantalla pequeña
+    const segments = lowres ? (config.radius >= 9 ? 40 : 32) : (config.radius >= 9 ? 64 : 48);
     const geometry = new THREE.SphereGeometry(config.radius, segments, segments);
 
     const material = new THREE.MeshStandardMaterial({
@@ -47,7 +54,7 @@ export class Planet {
       material.map = null;
       material.color.set(config.color);
       material.needsUpdate = true;
-    });
+    }, lowres);
     if (texture) {
       material.map = texture;
       material.color.set(0xffffff);
@@ -62,7 +69,7 @@ export class Planet {
     // Atmósfera sutil para planetas con atmósfera densa
     if (['earth', 'venus', 'mars'].includes(config.id)) {
       try {
-        const atmGeo = new THREE.SphereGeometry(config.radius * 1.08, 32, 32);
+        const atmGeo = new THREE.SphereGeometry(config.radius * 1.08, lowres ? 24 : 32, lowres ? 24 : 32);
         const atmMat = new THREE.MeshBasicMaterial({
           color: config.color,
           transparent: true,
@@ -126,7 +133,7 @@ export class Planet {
     // Luna (solo Tierra)
     if (config.hasMoon) {
       try {
-        const moonGeo = new THREE.SphereGeometry(config.radius * 0.27, 32, 32);
+        const moonGeo = new THREE.SphereGeometry(config.radius * 0.27, lowres ? 20 : 32, lowres ? 20 : 32);
         const moonMat = new THREE.MeshStandardMaterial({
           color: 0xbbbbbb,
           roughness: 0.95,
@@ -136,7 +143,7 @@ export class Planet {
           moonMat.map = null;
           moonMat.color.set(0xbbbbbb);
           moonMat.needsUpdate = true;
-        });
+        }, lowres);
         if (moonTex) {
           moonMat.map = moonTex;
           moonMat.color.set(0xffffff);
@@ -169,6 +176,14 @@ export class Planet {
 
     // Punto de interés para refinería
     this.refineryPosition = new THREE.Vector3(config.distance + config.radius + 8, 0, 0);
+    this._updateWorldPosition();
+  }
+
+  /** Posición analítica: el grupo está en (distance, 0, 0) dentro de orbitGroup (rotación Y). */
+  _updateWorldPosition() {
+    const a = this.orbitGroup.rotation.y;
+    const d = this.config.distance;
+    this.worldPosition.set(Math.cos(a) * d, 0, -Math.sin(a) * d);
   }
 
   update(delta, elapsed) {
@@ -185,20 +200,28 @@ export class Planet {
       if (this.rings) {
         this.rings.rotation.z += 0.0005 * delta * 10;
       }
+      this._updateWorldPosition();
     } catch (e) {
       console.error('[Planet] update error:', e);
     }
   }
 
-  getWorldPosition() {
-    try {
-      const pos = new THREE.Vector3();
-      this.group.getWorldPosition(pos);
-      return pos;
-    } catch (e) {
-      console.error('[Planet] getWorldPosition error:', e);
-      return new THREE.Vector3();
+  /** Copia de la posición en el mundo (sin recalcular matrices). */
+  getWorldPosition(target = new THREE.Vector3()) {
+    return target.copy(this.worldPosition);
+  }
+
+  /** Elimina las estructuras de civilización construidas (nueva misión). */
+  clearCivilization() {
+    for (const m of this.builtStructures) {
+      try {
+        this.group.remove(m);
+        m.geometry.dispose();
+        m.material.dispose();
+      } catch (e) { /* noop */ }
     }
+    this.builtStructures = [];
+    this.civilizationLevel = 0;
   }
 
   addCivilizationStructure(type, scene) {
@@ -222,7 +245,7 @@ export class Planet {
         Math.sin(angle) * r
       );
       mesh.lookAt(0, 0, 0);
-      mesh.castShadow = true;
+      mesh.castShadow = false;
       this.group.add(mesh);
       this.builtStructures.push(mesh);
       this.civilizationLevel++;

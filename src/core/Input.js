@@ -1,20 +1,24 @@
+import { settings } from '../systems/Settings.js';
+import { isTouchUI } from '../utils/device.js';
+
 /**
  * Input System - Teclado + Ratón + Gamepad + Táctil unificado (PC / TV / Móvil)
  *
- * Diseño: cada fuente de entrada escribe en su propio canal (teclado, ratón,
- * táctil, gamepad) y `update()` combina los canales en el estado final de cada
- * frame. Así ninguna fuente "se queda pegada": antes, soltar W/F/Shift no
- * detenía el movimiento, el disparo o el boost porque el estado se
- * realimentaba consigo mismo (`this.boost = shift || this.boost`).
+ * Cada fuente escribe en su propio canal y `update()` los combina en el estado
+ * final de cada frame, así ninguna fuente "se queda pegada".
  *
- * Estado que lee el juego cada frame:
- *   moveX, moveY          -1..1  (strafe / avance)
- *   up, down              bool   (Q / E, botones)
- *   lookX, lookY          velocidad de giro (rad/s) - joystick derecho / stick gamepad
- *   lookDeltaX, lookDeltaY giro instantáneo (rad) del ratón acumulado en este frame
- *   boost, shooting, collect  bool
- * Eventos puntuales: consumeCameraToggle(), consumeWeaponSwitch(),
- *   consumeCollectPress(), consumePause()
+ * Estado por frame:
+ *   moveX, moveY            -1..1  (lateral / avance)
+ *   up, down                bool   (Q / E, botones ▲ ▼)
+ *   lookX, lookY            velocidad de giro (rad/s): joystick derecho / stick del mando
+ *   lookDeltaX, lookDeltaY  giro instantáneo del ratón (rad) acumulado en el frame
+ *   boost, shooting         bool
+ *   actionHeld              bool   (ESPACIO / R / botón de acción / A): mantener = reparar
+ * Convención (sin inversión): lookX > 0 gira a la derecha, lookY > 0 mira hacia abajo
+ * (igual que arrastrar el dedo o mover el ratón hacia abajo).
+ *
+ * Eventos puntuales (consume*): acción, zoom (rueda), ciclo de cámara, alternar
+ * cámara, cambio de arma, tienda y pausa.
  */
 export class InputSystem {
   constructor(canvas) {
@@ -25,9 +29,10 @@ export class InputSystem {
     this.mouse = { x: 0, y: 0, left: false, right: false, locked: false };
     this._mouseDX = 0;
     this._mouseDY = 0;
-    this.mouseSensitivity = 0.0025; // rad por píxel
-    this.touch = { moveX: 0, moveY: 0, lookX: 0, lookY: 0, shoot: false, boost: false, collect: false, up: false, down: false };
+    this.baseMouseSensitivity = 0.0025; // rad por píxel (x Ajustes)
+    this.touch = { moveX: 0, moveY: 0, lookX: 0, lookY: 0, shoot: false, boost: false, action: false, up: false, down: false };
     this.gamepadIndex = null;
+    this.enabled = true;
 
     // Estado combinado (por frame)
     this.moveX = 0;
@@ -40,45 +45,60 @@ export class InputSystem {
     this.lookDeltaY = 0;
     this.boost = false;
     this.shooting = false;
-    this.collect = false;
+    this.actionHeld = false;
+    this.lastDevice = isTouchUI() ? 'touch' : 'keyboard';
 
     // Eventos puntuales
-    this._cameraToggleRequested = false;
-    this._weaponSwitch = 0;
-    this._pauseRequested = false;
-    this._collectLatch = false;   // pulsación de "depositar" pendiente de consumir
-    this._shootLatch = false;     // garantiza al menos un frame de disparo por click/tap
+    this._cameraToggle = false;
+    this._zoomCycle = false;
+    this._zoomDelta = 0;
+    this._weaponSwitch = 0;     // 0 nada | 1..4 arma concreta | 'next'
+    this._pause = false;
+    this._actionLatch = false;
+    this._shopLatch = false;
+    this._shootLatch = false;   // garantiza al menos un frame de disparo por click/tap
     this._prevGamepadButtons = {};
-    this._ignoreMouseEvents = 0;  // eventos de ratón a descartar tras capturar el puntero
+    this._ignoreMouseEvents = 0;
 
-    // Callbacks opcionales
     this.onPointerLockLost = null;
     this.onPointerLockError = null;
 
     this.bindEvents();
   }
 
+  get mouseSensitivity() {
+    return this.baseMouseSensitivity * (settings.get('mouseSensitivity') || 1);
+  }
+
   bindEvents() {
     window.addEventListener('keydown', e => {
-      // No interferir con controles de formulario del menú (selects, sliders)
       const tag = (e.target && e.target.tagName) || '';
       if (tag === 'SELECT' || tag === 'INPUT' || tag === 'TEXTAREA') return;
 
       const code = (e.code || '').toLowerCase();
       const wasDown = !!this.keys[code];
       this.keys[code] = true;
+      this.lastDevice = 'keyboard';
 
-      if (['Space', 'KeyF', 'KeyC', 'Digit1', 'Digit2', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+      if (['Space', 'KeyF', 'KeyC', 'KeyV', 'KeyT', 'KeyR', 'Digit1', 'Digit2', 'Digit3', 'Digit4',
+        'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
         e.preventDefault();
       }
-      if (e.repeat || wasDown) return; // solo flancos de bajada para eventos puntuales
+      if (e.repeat || wasDown) return; // solo flancos de bajada para eventos
 
-      if (e.code === 'Space') this._collectLatch = true;
-      if (e.code === 'KeyF') this._shootLatch = true;
-      if (e.code === 'KeyC') this._cameraToggleRequested = true;
-      if (e.code === 'Digit1' || e.code === 'Numpad1') this._weaponSwitch = 1;
-      if (e.code === 'Digit2' || e.code === 'Numpad2') this._weaponSwitch = 2;
-      if (e.code === 'Escape' || e.code === 'KeyP') this._pauseRequested = true;
+      switch (e.code) {
+        case 'Space': this._actionLatch = true; break;
+        case 'KeyF': this._shootLatch = true; break;
+        case 'KeyC': this._cameraToggle = true; break;
+        case 'KeyV': this._zoomCycle = true; break;
+        case 'KeyT': this._shopLatch = true; break;
+        case 'Digit1': case 'Numpad1': this._weaponSwitch = 1; break;
+        case 'Digit2': case 'Numpad2': this._weaponSwitch = 2; break;
+        case 'Digit3': case 'Numpad3': this._weaponSwitch = 3; break;
+        case 'Digit4': case 'Numpad4': this._weaponSwitch = 4; break;
+        case 'Escape': case 'KeyP': this._pause = true; break;
+        default: break;
+      }
     });
 
     window.addEventListener('keyup', e => {
@@ -86,14 +106,11 @@ export class InputSystem {
       this.keys[code] = false;
     });
 
-    // Si la ventana pierde el foco, soltar todas las teclas (evita teclas pegadas)
-    window.addEventListener('blur', () => {
-      this.keys = {};
-      this.mouse.left = false;
-      this.mouse.right = false;
-    });
+    // Si la ventana pierde el foco, soltar todo (evita teclas/botones pegados)
+    window.addEventListener('blur', () => this.releaseAll());
 
     this.canvas.addEventListener('mousedown', e => {
+      this.lastDevice = 'keyboard';
       if (e.button === 0) { this.mouse.left = true; this._shootLatch = true; }
       if (e.button === 2) this.mouse.right = true;
     });
@@ -103,20 +120,16 @@ export class InputSystem {
     });
 
     this.canvas.addEventListener('click', () => {
-      if (this.mouse.locked) return;
-      // Solo capturar el ratón si el juego está en marcha (HUD visible)
+      if (this.mouse.locked || !this.enabled) return;
       const hud = document.getElementById('hud');
-      if (hud && hud.classList.contains('visible')) {
-        this.requestPointerLock();
-      }
+      if (hud && hud.classList.contains('visible')) this.requestPointerLock();
     });
 
     document.addEventListener('pointerlockchange', () => {
       const locked = document.pointerLockElement === this.canvas;
       const wasLocked = this.mouse.locked;
       this.mouse.locked = locked;
-      // El primer mousemove tras capturar el puntero puede traer un salto enorme
-      // (movementX/Y relativo a la posición anterior del cursor). Se descarta.
+      // El primer mousemove tras capturar puede traer un salto enorme: se descarta
       this._ignoreMouseEvents = locked ? 2 : 0;
       this._mouseDX = 0;
       this._mouseDY = 0;
@@ -132,7 +145,6 @@ export class InputSystem {
     this.canvas.addEventListener('mousemove', e => {
       if (this.mouse.locked) {
         if (this._ignoreMouseEvents > 0) { this._ignoreMouseEvents--; return; }
-        // Limitar saltos anómalos (>150 px en un solo evento)
         const clampPx = v => Math.max(-150, Math.min(150, v || 0));
         this._mouseDX += clampPx(e.movementX);
         this._mouseDY += clampPx(e.movementY);
@@ -141,6 +153,17 @@ export class InputSystem {
         this.mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
       }
     });
+
+    // Rueda: acerca (arriba) / aleja (abajo) la cámara entre 3ª y 1ª persona
+    this.canvas.addEventListener('wheel', e => {
+      e.preventDefault();
+      if (!this.enabled) return;
+      let dy = e.deltaY || 0;
+      if (e.deltaMode === 1) dy *= 33;       // líneas
+      else if (e.deltaMode === 2) dy *= 400; // páginas
+      const step = Math.max(-0.15, Math.min(0.15, dy * 0.0012));
+      this._zoomDelta += step;
+    }, { passive: false });
 
     this.canvas.addEventListener('contextmenu', e => e.preventDefault());
 
@@ -153,13 +176,26 @@ export class InputSystem {
     });
   }
 
+  /** Suelta todas las entradas mantenidas (pausa, tienda, pérdida de foco). */
+  releaseAll() {
+    this.keys = {};
+    this.mouse.left = false;
+    this.mouse.right = false;
+    const t = this.touch;
+    t.moveX = t.moveY = t.lookX = t.lookY = 0;
+    t.shoot = t.boost = t.action = t.up = t.down = false;
+    this._mouseDX = 0;
+    this._mouseDY = 0;
+    this._shootLatch = false;
+  }
+
   /** Pide captura del puntero (debe llamarse desde un gesto de usuario). */
   requestPointerLock() {
     try {
       if (this.isTouchDevice()) return;
       if (document.pointerLockElement === this.canvas) return;
       const p = this.canvas.requestPointerLock?.({ unadjustedMovement: false });
-      if (p && typeof p.catch === 'function') p.catch(() => { /* ignorado: el usuario puede hacer click en el canvas */ });
+      if (p && typeof p.catch === 'function') p.catch(() => { /* el usuario puede hacer click en el canvas */ });
     } catch (e) { /* algunos navegadores lanzan si no hay gesto */ }
   }
 
@@ -167,15 +203,16 @@ export class InputSystem {
     try { if (document.pointerLockElement) document.exitPointerLock?.(); } catch (e) { /* noop */ }
   }
 
-  isTouchDevice() {
-    try {
-      return window.matchMedia('(pointer: coarse)').matches && !window.matchMedia('(hover: hover)').matches;
-    } catch (e) {
-      return 'ontouchstart' in window && navigator.maxTouchPoints > 0;
-    }
-  }
+  isTouchDevice() { return isTouchUI(); }
 
-  requestCameraToggle() { this._cameraToggleRequested = true; }
+  // Peticiones desde la interfaz táctil
+  requestCameraToggle() { this._cameraToggle = true; }
+  requestZoomCycle() { this._zoomCycle = true; }
+  requestWeaponNext() { this._weaponSwitch = 'next'; }
+  requestPause() { this._pause = true; }
+  requestAction() { this._actionLatch = true; }
+  requestShop() { this._shopLatch = true; }
+  requestShot() { this._shootLatch = true; }
 
   update() {
     const k = this.keys;
@@ -184,67 +221,75 @@ export class InputSystem {
     const a = k['keya'] || k['arrowleft'];
     const d = k['keyd'] || k['arrowright'];
     const shift = k['shiftleft'] || k['shiftright'];
-    const space = k['space'];
 
-    // --- Teclado ---
+    // --- Teclado / ratón ---
     let moveX = (d ? 1 : 0) - (a ? 1 : 0);
     let moveY = (w ? 1 : 0) - (s ? 1 : 0);
     let up = !!k['keyq'];
     let down = !!k['keye'];
     let boost = !!shift;
-    let collect = !!space;
+    let action = !!(k['space'] || k['keyr']);
     let shooting = !!(this.mouse.left || k['keyf']);
     let lookX = 0;
     let lookY = 0;
 
-    // --- Táctil (joysticks/botones virtuales) ---
+    // --- Táctil (joysticks dinámicos y botones) ---
     const t = this.touch;
-    if (Math.abs(t.moveX) > 0.05 || Math.abs(t.moveY) > 0.05) {
+    if (Math.abs(t.moveX) > 0.01 || Math.abs(t.moveY) > 0.01) {
       moveX = t.moveX;
       moveY = t.moveY;
     }
-    if (Math.abs(t.lookX) > 0.05 || Math.abs(t.lookY) > 0.05) {
-      lookX = t.lookX * 2.5;
-      lookY = t.lookY * 2.5;
+    if (t.lookX || t.lookY) {
+      lookX = t.lookX; // ya en rad/s con curva y sensibilidad (MobileControls)
+      lookY = t.lookY;
     }
     boost = boost || t.boost;
-    collect = collect || t.collect;
+    action = action || t.action;
     shooting = shooting || t.shoot;
     up = up || t.up;
     down = down || t.down;
-    if (t.collect && !this._prevTouchCollect) this._collectLatch = true;
-    this._prevTouchCollect = !!t.collect;
 
     // --- Gamepad ---
     const gp = this._getGamepad();
     if (gp) {
-      const dead = 0.2;
-      const ax = i => (gp.axes[i] !== undefined && Math.abs(gp.axes[i]) > dead) ? gp.axes[i] : 0;
+      const dead = 0.18;
+      const ax = i => {
+        const v = gp.axes[i];
+        if (v === undefined || Math.abs(v) < dead) return 0;
+        return Math.sign(v) * (Math.abs(v) - dead) / (1 - dead);
+      };
       const lx = ax(0), ly = -ax(1), rx = ax(2), ry = ax(3);
       if (lx || ly) { moveX = lx; moveY = ly; }
-      if (rx || ry) { lookX = rx * 2.5; lookY = ry * 2.5; }
+      const sens = settings.get('lookSensitivity') || 1;
+      if (rx || ry) {
+        lookX = Math.sign(rx) * Math.pow(Math.abs(rx), 1.6) * 2.6 * sens;
+        lookY = Math.sign(ry) * Math.pow(Math.abs(ry), 1.6) * 2.2 * sens;
+      }
       const btn = i => !!(gp.buttons[i] && gp.buttons[i].pressed);
+      const any = btn(0) || btn(1) || btn(2) || btn(3) || lx || ly || rx || ry;
+      if (any) this.lastDevice = 'gamepad';
       boost = boost || btn(1) || btn(6);          // B / LT
       shooting = shooting || btn(7) || btn(5);    // RT / RB
-      collect = collect || btn(0) || btn(2);      // A / X
-      up = up || btn(12);                         // D-pad arriba
-      down = down || btn(13);                     // D-pad abajo
-      // Botones con flanco: Y cámara, Start pausa, LB/RB cambio de arma
-      if (btn(3) && !this._prevGamepadButtons[3]) this._cameraToggleRequested = true;
-      if (btn(9) && !this._prevGamepadButtons[9]) this._pauseRequested = true;
-      if (btn(4) && !this._prevGamepadButtons[4]) this._weaponSwitch = this._weaponSwitch || 2;
-      const gpCollect = btn(0) || btn(2);
-      if (gpCollect && !this._prevGamepadButtons.collect) this._collectLatch = true;
-      this._prevGamepadButtons = { 3: btn(3), 9: btn(9), 4: btn(4), collect: gpCollect };
+      const gpAction = btn(0) || btn(2);          // A / X
+      action = action || gpAction;
+      up = up || btn(12);
+      down = down || btn(13);
+      const prev = this._prevGamepadButtons;
+      if (btn(3) && !prev[3]) this._zoomCycle = true;         // Y: distancia de cámara
+      if (btn(9) && !prev[9]) this._pause = true;             // Start
+      if (btn(4) && !prev[4]) this._weaponSwitch = 'next';    // LB
+      if (btn(8) && !prev[8]) this._shopLatch = true;         // Back/Select: tienda
+      if (gpAction && !prev.action) this._actionLatch = true;
+      this._prevGamepadButtons = { 3: btn(3), 9: btn(9), 4: btn(4), 8: btn(8), action: gpAction };
     }
 
     // --- Ratón (delta acumulado desde el último frame) ---
-    this.lookDeltaX = this._mouseDX * this.mouseSensitivity;
-    this.lookDeltaY = this._mouseDY * this.mouseSensitivity;
+    const ms = this.mouseSensitivity;
+    this.lookDeltaX = this._mouseDX * ms;
+    this.lookDeltaY = this._mouseDY * ms;
     this._mouseDX = 0;
     this._mouseDY = 0;
 
-    // Estado final
     this.moveX = Math.max(-1, Math.min(1, moveX));
     this.moveY = Math.max(-1, Math.min(1, moveY));
     this.up = up;
@@ -254,7 +299,7 @@ export class InputSystem {
     this.boost = boost;
     this.shooting = shooting || this._shootLatch;
     this._shootLatch = false;
-    this.collect = collect;
+    this.actionHeld = action;
   }
 
   _getGamepad() {
@@ -262,32 +307,24 @@ export class InputSystem {
       if (!navigator.getGamepads) return null;
       const pads = navigator.getGamepads();
       if (this.gamepadIndex !== null && pads[this.gamepadIndex]) return pads[this.gamepadIndex];
-      // Autodetección si el evento gamepadconnected no llegó
       for (const p of pads) { if (p && p.connected) { this.gamepadIndex = p.index; return p; } }
     } catch (e) { /* noop */ }
     return null;
   }
 
-  consumeCameraToggle() {
-    if (this._cameraToggleRequested) { this._cameraToggleRequested = false; return true; }
-    return false;
-  }
+  consumeCameraToggle() { const v = this._cameraToggle; this._cameraToggle = false; return v; }
+  consumeZoomCycle() { const v = this._zoomCycle; this._zoomCycle = false; return v; }
+  consumeZoomDelta() { const v = this._zoomDelta; this._zoomDelta = 0; return v; }
+  consumeWeaponSwitch() { const v = this._weaponSwitch; this._weaponSwitch = 0; return v; }
+  consumeActionPress() { const v = this._actionLatch; this._actionLatch = false; return v; }
+  consumeShopRequest() { const v = this._shopLatch; this._shopLatch = false; return v; }
+  consumePause() { const v = this._pause; this._pause = false; return v; }
 
-  consumeWeaponSwitch() {
-    const w = this._weaponSwitch;
+  /** Descarta eventos pendientes (al reanudar tras menú/tienda). */
+  flushEvents() {
+    this._cameraToggle = this._zoomCycle = this._actionLatch = this._shopLatch = this._pause = false;
+    this._zoomDelta = 0;
     this._weaponSwitch = 0;
-    return w;
-  }
-
-  /** True una sola vez por pulsación de ESPACIO / botón 📦 / A del mando. */
-  consumeCollectPress() {
-    const p = this._collectLatch;
-    this._collectLatch = false;
-    return p;
-  }
-
-  consumePause() {
-    if (this._pauseRequested) { this._pauseRequested = false; return true; }
-    return false;
+    this._shootLatch = false;
   }
 }

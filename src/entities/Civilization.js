@@ -62,6 +62,17 @@ export class CivilizationManager {
     if (this.onUpdate) this.onUpdate(this.inventory, this.built);
   }
 
+  /** Nueva misión: vacía el inventario y elimina las estructuras construidas. */
+  reset() {
+    Object.keys(this.inventory).forEach(k => { this.inventory[k] = 0; });
+    this.built = {};
+    this.totalBuilt = 0;
+    if (this.solarSystem && this.solarSystem.planets) {
+      this.solarSystem.planets.forEach(p => { try { p.clearCivilization(); } catch (e) { /* noop */ } });
+    }
+    this.notify();
+  }
+
   getInventoryList() {
     return Object.entries(this.inventory).map(([id, amount]) => ({
       id,

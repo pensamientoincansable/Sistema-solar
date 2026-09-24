@@ -1,6 +1,34 @@
 import * as THREE from 'three';
 import { TRASH_TYPES } from '../config/PlanetsConfig.js';
+import { getGlowTexture } from '../utils/textures.js';
 
+const _v = new THREE.Vector3();
+const _closest = { planet: null, distance: Infinity };
+
+function makeGeometry(cfg) {
+  const s = cfg.scale;
+  switch (cfg.model) {
+    case 'cube': return new THREE.BoxGeometry(s, s, s);
+    // Antes era un PlaneGeometry de una sola cara: invisible visto por detrás
+    case 'plane': return new THREE.BoxGeometry(s * 1.5, s, 0.08);
+    case 'cylinder': return new THREE.CylinderGeometry(s * 0.4, s * 0.4, s * 1.8, 10);
+    case 'sphere': return new THREE.SphereGeometry(s * 0.6, 12, 10);
+    case 'octahedron': return new THREE.OctahedronGeometry(s * 0.8, 0);
+    case 'icosahedron': return new THREE.IcosahedronGeometry(s * 0.7, 0);
+    case 'capsule': return new THREE.CapsuleGeometry(s * 0.38, s * 0.9, 4, 10);
+    case 'torus': return new THREE.TorusGeometry(s * 0.5, s * 0.18, 8, 16);
+    case 'tetra': return new THREE.TetrahedronGeometry(s * 0.85, 0);
+    case 'dodeca': return new THREE.DodecahedronGeometry(s * 0.75, 0);
+    default: return new THREE.BoxGeometry(1, 1, 1);
+  }
+}
+
+/**
+ * TrashSystem - Basura espacial.
+ * Geometrías y materiales se comparten por tipo (antes cada pieza creaba y
+ * destruía los suyos): menos memoria, menos trabajo para el recolector de
+ * basura de JS y sin recompilar programas de shader.
+ */
 export class TrashSystem {
   constructor(scene, solarSystem, qualitySettings) {
     this.scene = scene;
@@ -8,57 +36,64 @@ export class TrashSystem {
     this.quality = qualitySettings || { trashCount: 100, renderDistance: 800 };
     this.trashList = [];
     this.group = new THREE.Group();
+    this.group.name = 'trash';
     this.scene.add(this.group);
+    this.resources = new Map();
+    this._randomTypes = TRASH_TYPES.filter(t => t.random !== false);
 
     try { this.spawnInitial(); } catch (e) { console.error('[Trash] spawnInitial error:', e); }
   }
 
+  _res(cfg) {
+    let r = this.resources.get(cfg.id);
+    if (!r) {
+      r = {
+        geometry: makeGeometry(cfg),
+        material: new THREE.MeshStandardMaterial({
+          color: cfg.color, roughness: 0.55, metalness: 0.45,
+          emissive: cfg.color, emissiveIntensity: 0.18,
+        }),
+        // Brillo suave (sprite) para localizar la basura: antes era una esfera
+        // translúcida de borde duro que se veía como una mancha
+        haloMaterial: new THREE.SpriteMaterial({
+          map: getGlowTexture(), color: cfg.color, transparent: true, opacity: 0.5,
+          blending: THREE.AdditiveBlending, depthWrite: false,
+        }),
+      };
+      this.resources.set(cfg.id, r);
+    }
+    return r;
+  }
+
+  getType(id) { return TRASH_TYPES.find(t => t.id === id) || null; }
+
+  /** Tipo aleatorio para un material concreto (o cualquiera si no hay candidatos). */
+  typeForMaterial(material) {
+    const candidates = TRASH_TYPES.filter(t => t.material === material);
+    if (candidates.length) return candidates[Math.floor(Math.random() * candidates.length)];
+    return this._randomTypes[Math.floor(Math.random() * this._randomTypes.length)];
+  }
+
   createTrash(position, type = null, planetId = null) {
     try {
-      const cfg = type || TRASH_TYPES[Math.floor(Math.random() * TRASH_TYPES.length)];
-      let geo;
-      switch (cfg.model) {
-        case 'cube': geo = new THREE.BoxGeometry(cfg.scale, cfg.scale, cfg.scale); break;
-        case 'plane': geo = new THREE.PlaneGeometry(cfg.scale * 1.5, cfg.scale); break;
-        case 'cylinder': geo = new THREE.CylinderGeometry(cfg.scale * 0.4, cfg.scale * 0.4, cfg.scale * 1.8, 8); break;
-        case 'sphere': geo = new THREE.SphereGeometry(cfg.scale * 0.6, 12, 12); break;
-        case 'octahedron': geo = new THREE.OctahedronGeometry(cfg.scale * 0.8, 0); break;
-        case 'icosahedron': geo = new THREE.IcosahedronGeometry(cfg.scale * 0.7, 0); break;
-        default: geo = new THREE.BoxGeometry(1, 1, 1);
-      }
-      const mat = new THREE.MeshStandardMaterial({
-        color: cfg.color,
-        roughness: 0.6,
-        metalness: 0.5,
-        emissive: cfg.color,
-        emissiveIntensity: 0.15
-      });
-      const mesh = new THREE.Mesh(geo, mat);
+      const cfg = type || this._randomTypes[Math.floor(Math.random() * this._randomTypes.length)];
+      const res = this._res(cfg);
+      const mesh = new THREE.Mesh(res.geometry, res.material);
       mesh.position.copy(position);
       mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
-      mesh.castShadow = false;
-      mesh.receiveShadow = false;
       mesh.userData.isTrash = true;
 
-      // Halo para visibilidad
-      try {
-        const haloGeo = new THREE.SphereGeometry(cfg.scale * 1.2, 8, 8);
-        const haloMat = new THREE.MeshBasicMaterial({
-          color: cfg.color,
-          transparent: true,
-          opacity: 0.15,
-          blending: THREE.AdditiveBlending,
-          side: THREE.BackSide
-        });
-        const halo = new THREE.Mesh(haloGeo, haloMat);
-        mesh.add(halo);
-      } catch (e) { /* halo opcional */ }
+      const halo = new THREE.Sprite(res.haloMaterial);
+      halo.scale.setScalar(cfg.scale * 2.6);
+      halo.visible = false;
+      mesh.add(halo);
 
       const trashObj = {
         mesh,
+        halo,
         config: cfg,
         planetId,
-        velocity: new THREE.Vector3((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2),
+        velocity: new THREE.Vector3((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 1, (Math.random() - 0.5) * 2),
         rotationSpeed: new THREE.Vector3((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2),
         collected: false,
         value: cfg.value
@@ -73,127 +108,168 @@ export class TrashSystem {
     }
   }
 
+  /** Elimina una pieza (recogida, robada por un OVNI o destruida). No libera recursos compartidos. */
+  removeTrash(t) {
+    if (!t || t.collected) return;
+    t.collected = true;
+    this.group.remove(t.mesh);
+    const idx = this.trashList.indexOf(t);
+    if (idx >= 0) {
+      // swap-remove: O(1)
+      const last = this.trashList.pop();
+      if (idx < this.trashList.length) this.trashList[idx] = last;
+    }
+  }
+
+  _pickPlanet(planets) {
+    let total = 0;
+    for (const p of planets) total += p.config.trashRichness || 1;
+    let r = Math.random() * total;
+    for (const p of planets) {
+      r -= p.config.trashRichness || 1;
+      if (r <= 0) return p;
+    }
+    return planets[planets.length - 1];
+  }
+
+  _spawnAroundPlanet(planet) {
+    const pp = planet.worldPosition;
+    const angle = Math.random() * Math.PI * 2;
+    const dist = planet.config.radius + 5 + Math.random() * 25;
+    _v.set(pp.x + Math.cos(angle) * dist, (Math.random() - 0.5) * 12, pp.z + Math.sin(angle) * dist);
+    let type = null;
+    const mats = planet.config.trashMaterials;
+    if (mats && mats.length && Math.random() < 0.78) {
+      type = this.typeForMaterial(mats[Math.floor(Math.random() * mats.length)]);
+    }
+    return this.createTrash(_v, type, planet.config.id);
+  }
+
+  _spawnBelt() {
+    const r = 95 + Math.random() * 20;
+    const a = Math.random() * Math.PI * 2;
+    _v.set(Math.cos(a) * r, (Math.random() - 0.5) * 10, Math.sin(a) * r);
+    const roll = Math.random();
+    const type = roll < 0.5 ? this.getType('rock') : roll < 0.8 ? this.typeForMaterial('metal') : this.getType('crystal');
+    return this.createTrash(_v, type, 'belt');
+  }
+
   spawnInitial() {
     const count = this.quality.trashCount || 100;
     const planets = this.solarSystem ? this.solarSystem.planets : [];
 
     if (planets.length === 0) {
-      // Sin planetas: basura en puntos aleatorios
       for (let i = 0; i < count; i++) {
-        const pos = new THREE.Vector3(
-          (Math.random() - 0.5) * 200,
-          (Math.random() - 0.5) * 100,
-          (Math.random() - 0.5) * 200
-        );
-        this.createTrash(pos);
+        _v.set((Math.random() - 0.5) * 200, (Math.random() - 0.5) * 100, (Math.random() - 0.5) * 200);
+        this.createTrash(_v);
       }
       return;
     }
 
     for (let i = 0; i < count; i++) {
-      try {
-        const planet = planets[Math.floor(Math.random() * planets.length)];
-        const planetPos = planet.getWorldPosition();
-        const angle = Math.random() * Math.PI * 2;
-        const dist = planet.config.radius + 5 + Math.random() * 25;
-        const pos = new THREE.Vector3(
-          planetPos.x + Math.cos(angle) * dist,
-          (Math.random() - 0.5) * 12,
-          planetPos.z + Math.sin(angle) * dist
-        );
-        let type = null;
-        if (Math.random() < 0.7) {
-          const matMap = {
-            'metálico': 'metal', 'ácido': 'polymer', 'orgánico-tech': 'bio',
-            'óxido': 'metal', 'gigante': 'gas', 'anillos': 'ice',
-            'criogénico': 'ice', 'oscuro': 'crystal'
-          };
-          const desiredMat = matMap[planet.config.trashType] || 'metal';
-          const candidates = TRASH_TYPES.filter(t => t.material === desiredMat);
-          if (candidates.length) type = candidates[Math.floor(Math.random() * candidates.length)];
-        }
-        this.createTrash(pos, type, planet.config.id);
-      } catch (e) { /* skip */ }
+      try { this._spawnAroundPlanet(this._pickPlanet(planets)); } catch (e) { /* skip */ }
     }
-
-    // Cinturón asteroides entre Marte y Júpiter
-    for (let i = 0; i < 30; i++) {
-      try {
-        const r = 95 + Math.random() * 20;
-        const a = Math.random() * Math.PI * 2;
-        const pos = new THREE.Vector3(Math.cos(a) * r, (Math.random() - 0.5) * 10, Math.sin(a) * r);
-        this.createTrash(pos);
-      } catch (e) { /* skip */ }
+    // Cinturón de asteroides entre Marte y Júpiter: rocas (hormigón), metal y cristal
+    const belt = Math.round(Math.max(14, count * 0.25));
+    for (let i = 0; i < belt; i++) {
+      try { this._spawnBelt(); } catch (e) { /* skip */ }
     }
   }
 
-  spawnNear(position, amount = 3) {
+  /** Genera basura alrededor de un punto. `typeIds` opcional: lista de ids a elegir. */
+  spawnNear(position, amount = 3, typeIds = null) {
     if (!position) return;
     for (let i = 0; i < amount; i++) {
       try {
-        const offset = new THREE.Vector3((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20);
-        this.createTrash(position.clone().add(offset));
+        _v.set((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10).add(position);
+        let type = null;
+        if (typeIds && typeIds.length) type = this.getType(typeIds[Math.floor(Math.random() * typeIds.length)]);
+        const t = this.createTrash(_v, type);
+        if (t) t.velocity.set((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6);
       } catch (e) { /* skip */ }
     }
   }
 
-  update(delta, wallePos) {
-    const renderDistance = this.quality.renderDistance || 800;
-    for (let i = this.trashList.length - 1; i >= 0; i--) {
-      try {
-        const t = this.trashList[i];
-        if (t.collected) continue;
-        t.mesh.rotation.x += t.rotationSpeed.x * delta;
-        t.mesh.rotation.y += t.rotationSpeed.y * delta;
-        t.mesh.rotation.z += t.rotationSpeed.z * delta;
-        t.mesh.position.addScaledVector(t.velocity, delta * 0.3);
+  update(delta, wallePos, walle = null) {
+    const rd = this.quality.renderDistance || 800;
+    const rd2 = rd * rd;
+    const magnetR = walle && !walle.cargoFull ? walle.magnetRadius : 0;
+    const magnetR2 = magnetR * magnetR;
+    const damp = 1 - 0.08 * delta;
+    const list = this.trashList;
+    for (let i = list.length - 1; i >= 0; i--) {
+      const t = list[i];
+      if (t.collected) continue;
+      const m = t.mesh;
+      const p = m.position;
 
-        if (this.solarSystem) {
-          const closest = this.solarSystem.getClosestPlanet(t.mesh.position);
-          if (closest.distance < 60 && closest.planet) {
-            const dir = closest.planet.getWorldPosition().sub(t.mesh.position).normalize();
-            t.velocity.addScaledVector(dir, delta * 0.2);
+      p.addScaledVector(t.velocity, delta * 0.3);
+      t.velocity.multiplyScalar(damp);
+
+      if (this.solarSystem) {
+        const info = this.solarSystem.getClosestPlanetInfo(p, _closest);
+        if (info.planet && info.distance < 60) {
+          const r = info.planet.config.radius;
+          _v.copy(info.planet.worldPosition).sub(p);
+          const d = info.distance || 1;
+          if (d < r + 3) {
+            // Demasiado cerca de la superficie: empujar hacia fuera
+            t.velocity.addScaledVector(_v, -2.0 * delta / d);
+          } else if (d > r + 8) {
+            t.velocity.addScaledVector(_v, 0.25 * delta / d);
           }
         }
+      }
 
-        const distToPlayer = wallePos ? t.mesh.position.distanceTo(wallePos) : 0;
-        t.mesh.visible = distToPlayer < renderDistance;
-        if (t.mesh.children[0]) t.mesh.children[0].visible = distToPlayer < 60;
-      } catch (e) { /* skip frame */ }
+      let dist2 = 0;
+      if (wallePos) {
+        dist2 = p.distanceToSquared(wallePos);
+        // Imán de recolección: atrae la basura hacia WALL·E
+        if (dist2 < magnetR2) {
+          const d = Math.sqrt(dist2) || 1;
+          const speed = (14 + (magnetR - d) * 3) * delta;
+          p.addScaledVector(_v.copy(wallePos).sub(p), Math.min(1, speed / d));
+        }
+      }
+      const visible = dist2 < rd2;
+      m.visible = visible;
+      if (visible) {
+        m.rotation.x += t.rotationSpeed.x * delta;
+        m.rotation.y += t.rotationSpeed.y * delta;
+        m.rotation.z += t.rotationSpeed.z * delta;
+        t.halo.visible = dist2 < 3600;
+      }
     }
   }
 
-  checkCollection(walle, radius = 4) {
+  /**
+   * Recoge la basura dentro del radio. Devuelve { collected, full }.
+   */
+  checkCollection(walle, radius = null) {
+    const R = radius || walle.pickupRadius || 4.5;
+    const R2 = R * R;
     let collected = 0;
-    for (let i = this.trashList.length - 1; i >= 0; i--) {
-      try {
-        const t = this.trashList[i];
-        if (t.collected) continue;
-        const dist = t.mesh.position.distanceTo(walle.position);
-        if (dist < radius) {
-          if (walle.collectTrash(t)) {
-            t.collected = true;
-            this.group.remove(t.mesh);
-            t.mesh.geometry.dispose();
-            if (t.mesh.material) t.mesh.material.dispose();
-            this.trashList.splice(i, 1);
-            collected++;
-            // Respawn dinámico
-            if (Math.random() < 0.6 && this.solarSystem && this.solarSystem.planets.length) {
-              try {
-                const planet = this.solarSystem.planets[Math.floor(Math.random() * this.solarSystem.planets.length)];
-                const pp = planet.getWorldPosition();
-                const ang = Math.random() * Math.PI * 2;
-                const d = planet.config.radius + 10 + Math.random() * 30;
-                const pos = new THREE.Vector3(pp.x + Math.cos(ang) * d, (Math.random() - 0.5) * 15, pp.z + Math.sin(ang) * d);
-                this.createTrash(pos, null, planet.config.id);
-              } catch (e) { /* skip */ }
-            }
-          }
-        }
-      } catch (e) { /* skip frame */ }
+    let full = false;
+    const list = this.trashList;
+    for (let i = list.length - 1; i >= 0; i--) {
+      const t = list[i];
+      if (t.collected) continue;
+      if (t.mesh.position.distanceToSquared(walle.position) >= R2) continue;
+      if (!walle.collectTrash(t)) { full = true; break; }
+      this.removeTrash(t);
+      collected++;
+      // Reaparición para mantener la densidad
+      if (Math.random() < 0.65 && this.solarSystem && this.solarSystem.planets.length) {
+        try { this._spawnAroundPlanet(this._pickPlanet(this.solarSystem.planets)); } catch (e) { /* skip */ }
+      }
     }
-    return collected;
+    return { collected, full };
+  }
+
+  reset() {
+    for (const t of this.trashList) this.group.remove(t.mesh);
+    this.trashList = [];
+    try { this.spawnInitial(); } catch (e) { console.error('[Trash] reset error:', e); }
   }
 
   getCount() { return this.trashList.length; }

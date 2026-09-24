@@ -18,150 +18,158 @@ npm run dev
 
 **Preview Arena**: El servidor dev ya está configurado con `host: 0.0.0.0` y `allowedHosts: true` para funcionar en el preview https://{port}-{sandbox}.e2b.app
 
+## 🕹️ Controles
+
+### 📱 Móvil / tablet (Android e iOS)
+Al empezar la primera partida aparece un **tutorial interactivo de 7 pasos** que señala cada control
+real con un foco y una flecha (se puede repetir desde *Menú → Tutorial* o *Ajustes → Ver tutorial*).
+
+| Control | Acción |
+|---|---|
+| **Joystick de movimiento** (dinámico) | Aparece donde apoyas el pulgar en la **mitad izquierda**. Arriba = avanzar. |
+| **Joystick de cámara** (dinámico) | Aparece donde apoyas el pulgar en la **mitad derecha**. Sin inversión de ejes: derecha gira a la derecha, arriba mira arriba. |
+| 🎯 Disparar (88 px) | Mantener para disparar (con ayuda al apuntar). |
+| ⇄ Arma | Cambia entre las armas que tengas. |
+| ⏫ Turbo | Mantener para volar más rápido. |
+| ✋ Acción contextual | **Depositar** en refinería · **Reparar** refinería (mantener) · abrir la **Tienda** del taxi. |
+| ▲ ▼ | Subir / bajar. |
+| 👁 Ojo | Recorre 4 distancias de cámara: tercera persona → media → cercana → primera persona. |
+| ⏸ Pausa | Menú, ajustes y civilizaciones. |
+
+Los botones y joysticks están dimensionados para un dedo adulto (joystick de 132 px, disparo de 88 px,
+resto ≥ 58 px) y en **Ajustes** se puede cambiar su tamaño (85–140 %), la **sensibilidad de la cámara**
+(0,3×–2,5×), la vibración y la pantalla completa.
+
+### 💻 PC
+WASD mover · Ratón mirar (clic para capturar el puntero) · Q/E subir/bajar · Shift turbo ·
+Clic/F disparar · 1-4 armas · **Rueda del ratón: distancia de cámara continua desde la tercera persona
+hasta la primera** · V recorre las 4 distancias · C alterna 1ª/3ª persona · Espacio acción
+(mantener = reparar) · R reparar · T tienda · Esc/P pausa.
+
+### 🎮 Mando / TV
+Stick izq. mover · stick der. mirar · RT/RB disparar · B/LT turbo · A/X acción · LB siguiente arma ·
+Y distancias de cámara · Back tienda · D-pad ▲▼ subir/bajar · Start pausa.
+
+## 🌟 Características
+
+### Sistema Solar
+- **8 planetas** con texturas del repo, órbitas, atmósferas, anillos de Saturno y Luna.
+- Sol con glow, estrellas y cinturón de asteroides entre Marte y Júpiter.
+
+### WALL·E
+- Modelo GLTF del repo (`public/scene.gltf`), **orientado de espaldas a la cámara** (antes miraba al jugador).
+- Cámara con **zoom continuo** entre la tercera persona original y los ojos de WALL·E (primera persona,
+  el modelo se oculta). Rueda en PC, botón 👁 con 4 niveles en móvil.
+- Mejorable en la tienda: motor, blindaje, bodega, imán de recolección y soldador.
+
+### Recolección, agua y refinado
+- 10 tipos de basura. Cada planeta genera los materiales que necesita su civilización.
+- **💧 Agua** (modelo `assets/drop_of_water`): gotas que abundan alrededor de la **Tierra** (y algunas en
+  Neptuno). Es el único origen de agua, necesaria para Neo-Terra y Abismo Azul.
+- Imán de recolección: la basura y las gotas cercanas vuelan hacia WALL·E.
+- Refinerías orbitales: depositar da materiales + **créditos (CR)**.
+
+### ☄️ Lluvias de asteroides (modelo `assets/asteroides`)
+- Cada 70–110 s (la primera a los ~55 s) una oleada se dirige contra una refinería, avisada con banner,
+  marcador en pantalla y minimapa.
+- Los impactos dañan la refinería; a 0 % queda **FUERA DE SERVICIO** (no admite depósitos) hasta que
+  WALL·E la **repara** manteniendo el botón de acción a su lado.
+- Destruirlos da créditos y fragmentos de roca; los grandes se parten en dos. Defender sin impactos: +40 CR.
+
+### 🛸 OVNIs (modelo `assets/nave_espacial_ufo`)
+- Sustituyen a los antiguos enemigos: **Dron OVNI**, **OVNI pirata** y **Nave nodriza** (distinto tamaño,
+  vida y halo de color).
+- Patrullan su planeta, **roban basura con un rayo tractor** (la sueltan al ser derribados), rodean al
+  jugador disparando y los drones dañados huyen.
+
+### 🚕 Taxi-Mercader (modelo `assets/b90_taxi_the_fifth_element`)
+- Vendedor ambulante que recorre una ruta de planetas, se detiene un rato en cada uno y espera si estás cerca.
+- Tienda con **armas** (munición de plasma, Dispersor de chatarra, Lanzamisiles buscadores, packs de
+  misiles, láser potenciado) y **mejoras** (motor, blindaje, bodega, imán, soldador, reparación).
+
+### Armas
+| Arma | Detalle |
+|---|---|
+| Láser | Infinito, rápido; mejorable (+35 % daño por nivel) |
+| Plasma | Munición, daño alto, rompe la basura en trozos |
+| Dispersor | 6 perdigones, munición infinita (tienda) |
+| Misiles | Buscan OVNIs y asteroides, daño en área (tienda) |
+
+### Interfaz
+- **Menú** con pestañas (Objetivo, Planetas, Civilizaciones, Ajustes, Créditos) que cabe entero en un
+  móvil en horizontal, sin desplazarse.
+- **HUD** compacto sin solapamientos: estado (integridad, bodega, créditos, arma), objetivo dinámico,
+  alertas, minimapa orientado según el rumbo (refinerías, taxi, OVNIs, asteroides, agua, basura),
+  **indicador de acción contextual** y **marcadores** en pantalla o pegados al borde (taxi, refinería
+  atacada, refinerías caídas, refinería más cercana con la bodega llena).
+- Efectos de sonido sintetizados con WebAudio (0 KB de descarga) controlados por el volumen de Ajustes.
+
+## ⚡ Optimización
+- **Modelos optimizados**: `scripts/optimize-assets.mjs` genera versiones ligeras de `/assets` en
+  `public/models/` (≈3,8 MB en lugar de ≈74 MB; texturas de 4096² reducidas a 512–1024 px; la gota de
+  agua pasa de 118 800 a 354 triángulos). Los originales de `/assets` no se modifican.
+- Texturas planetarias de 1024×512 en móvil (`public/textures/lowres/`), menos teselación y sin MSAA.
+- **Partículas en GPU**: un único `THREE.Points` para explosiones, chispas y estelas (1 draw call).
+- **Pools** de proyectiles: sin crear geometrías, materiales ni `PointLight` por disparo. Antes cada luz
+  nueva obligaba a recompilar los shaders de toda la escena (tirones).
+- Sin luces dinámicas en refinerías/enemigos (halos con sprites) ni `shadowMap` sin uso.
+- Geometrías/materiales compartidos (basura por tipo, OVNIs, asteroides) e `InstancedMesh` para el agua.
+- Posiciones de planetas cacheadas por frame, sin reservas de memoria en los bucles calientes,
+  minimapa a 12 Hz, textos del HUD a 10 Hz y marcadores a 30 Hz.
+- En pausa o con la tienda abierta la escena no se vuelve a dibujar (ahorro de batería).
+- Resolución adaptativa según FPS (`AdaptiveResolution`).
+
+### Regenerar los modelos optimizados
+```bash
+npm i --no-save @gltf-transform/core@4 @gltf-transform/extensions@4 @gltf-transform/functions@4 sharp meshoptimizer
+node scripts/optimize-assets.mjs            # todo
+node scripts/optimize-assets.mjs water ufo  # solo algunos (asteroids|water|ufo|taxi|planets)
+```
+
+## 🗂️ Estructura
+```
+assets/                  modelos originales (masters CC-BY-4.0 con license.txt)
+public/                  estáticos copiados a dist/
+  scene.gltf, scene.bin  WALL·E
+  models/                asteroides, gota, OVNI y taxi optimizados (GLB)
+  textures/ (+ lowres/)  planetas, sol, luna, anillos
+scripts/optimize-assets.mjs
+src/
+  config/PlanetsConfig.js, ShopConfig.js
+  core/Game.js (orquestación), Input.js (teclado, ratón, rueda, mando, táctil)
+  entities/SolarSystem.js, Planet.js, WallE.js, Trash.js, WaterSystem.js, Enemy.js (OVNIs),
+           AsteroidSystem.js, Refinery.js, TaxiVendor.js, Civilization.js
+  systems/Combat.js, Particles.js, Settings.js, AudioFX.js
+  ui/HUD.js, HoloMenu.js, ShopUI.js, Tutorial.js
+  utils/MobileControls.js (joysticks dinámicos), device.js, ModelLibrary.js, HealthBar.js,
+        textures.js, AdaptiveResolution.js, assets.js
+```
+
 ## 🚀 Despliegue en GitHub Pages
 
-El juego se construye con Vite, así que GitHub Pages **no puede servir el código fuente tal cual**
-(`index.html` carga `/src/main.js` y el código importa `three` como módulo, que el navegador no
-sabe resolver sin empaquetar). Por eso el despliegue se hace con el workflow
-[`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml):
+El workflow [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml) compila
+(`npm ci && npm run build`) y publica `dist/` en cada push a `main`. Requisito (una vez): *Settings → Pages →
+Source: GitHub Actions*. `vite.config.js` usa `base: './'`.
 
-1. En cada push a `main` compila (`npm ci && npm run build`) y publica la carpeta `dist/`.
-2. **Requisito (una sola vez):** en *Settings → Pages → Build and deployment → Source* debe estar
-   seleccionado **GitHub Actions** (no *Deploy from a branch*).
-3. `vite.config.js` usa `base: './'`, por lo que el build funciona en `/Sistema-solar/` o en cualquier otra ruta.
-4. Los assets estáticos (texturas y modelo GLTF) viven en `public/` y se copian a `dist/` en el build.
-
-## 🌟 Características Implementadas
-
-### Sistema Solar Real
-- **8 planetas** con texturas originales del repo (`public/textures/*_baseColor.jpeg`)
-- Órbitas escaladas, rotación, atmósfera sutil, anillos de Saturno, Luna terrestre
-- Sol con glow y luz puntual, estrellas con 3000 puntos + parallax
-- Cinturón de asteroides entre Marte y Júpiter
-
-### WALL·E Protagonista
-- Modelo GLTF original del repo (`public/scene.gltf` + `public/scene.bin`) - 24k vértices, CC-BY-4.0 Omshivam
-- Fallback cúbico si falla carga, para no bloquear gameplay
-- Física: velocidad max 35u/s, boost 2.2x, drag 0.92, aceleración 45
-- Thruster con luz puntual + partículas Points (80) + efecto boost
-- **Dos cámaras fluidas**:
-  - Tercera persona: offset (0,6,-14), lerp 0.08, mira 20u adelante
-  - Primera persona: offset (0,1.2,0.6), inmersiva dentro de WALL·E
-  - Toggle con `C` o botón móvil
-
-### Recolección y Refinado
-- **Basura espacial** procedural: 6 tipos (satélite, panel, cohete, orgánico, cristal, hielo) con valor y material
-- Distribución alrededor de planetas según `trashType` (ej. Marte genera óxido metálico)
-- Recolección por proximidad (radio 4.5u), capacidad 50, auto-respawn para mantener densidad
-- **Refinerías orbitales**: toroide + núcleo icosaedro + 2 anillos giratorios + luz. Una central + una por planeta que sigue su órbita
-- Depósito con `[ESPACIO]`, refinado con bonus aleatorio, efecto explosión cian
-
-### Civilizaciones Adaptadas
-Cada planeta tiene una civilización única con requisitos y bonus:
-- **Mercurio - Forja Solar**: espejos resistentes calor, +200% energía
-- **Venus - Aerópolis**: ciudades flotantes, extracción atmosférica
-- **Tierra - Neo-Terra**: arcologías verdes, +50% terraformación
-- **Marte - Ares Dome**: cúpulas regolito, minería autónoma
-- **Júpiter - Estación Jovian**: plataformas magnéticas, fusión ilimitada
-- **Saturno - Anillo Habitat**: ciudades anulares, gravedad artificial
-- **Urano - Cryo Vault**: bóvedas cuánticas, computación cuántica
-- **Neptuno - Abismo Azul**: estaciones profundas, detección materia oscura
-
-Construcción: consume materiales, añade estructura (domo/cubo) sobre planeta, sube nivel civilización.
-
-### Enemigos y Combate
-- **3 tipos**: Drone (rápido, 40hp), Pirata (80hp), Mothership (200hp, 3x escala)
-- IA: patrulla, caza basura (roba y destruye), caza jugador si <70u, huida
-- Disparo enemigo: proyectil rojo 35u/s con imprecisión
-- **Armamento jugador**:
-  - Láser: cápsula cian, 90u/s, 25 daño, infinito, cadencia 150ms
-  - Plasma: esfera magenta, 45u/s, 60 daño, 50 munición, cadencia 400ms, rompe basura en más piezas
-- Explosiones: partículas + anillo expansivo, luz
-
-### Menú Galáctico Holográfico
-- Diseño: glassmorphism, neón cian/magenta/amarillo, scanline animada, blur 12px
-- Secciones: Jugar, Continuar, Sistema Solar (grid 4 planetas clicables), Materiales & Civilización (progreso + selector + construir), Configuración, Objetivo
-- Fuentes: Orbitron (títulos) + Exo 2 (cuerpo)
-- Transición suave, responsive: 1 columna en móvil, escala 1.2x en TV 4K
-
-### HUD Inmersivo
-- Top: salud barra + planeta cercano + basura contador + arma/munición
-- Centro: crosshair con efecto shoot scale 1.5
-- Bottom: inventario materiales + minimapa circular (140px) con planetas, basura, jugador + controles
-- Notificaciones deslizantes con colores por tipo
-- Hint refinería cuando <8u
-
-### Optimización y Resolución Adaptativa
-**Archivo `src/utils/AdaptiveResolution.js`:**
-- Detecta dispositivo: móvil (touch ≤1024), tablet, PC, TV (≥1920 sin touch o UA tv)
-- Calidad inicial: móvil 0 (DPR 1.5, 30fps, sin sombras, 40 basura, 4 enemigos, render 400), PC 2 (DPR 2.0, 60fps, sombras PCFSoft, 150 basura, 12 enemigos, 1500), TV 3 (DPR 1.0, 200 basura, 16 enemigos, 2500)
-- Ajuste dinámico: mide FPS cada segundo, si avg < target-10 baja DPR 0.15 (min 0.6), si > target+5 sube 0.05
-- Sombras: off en low, Basic en medium, PCFSoft en high/ultra
-- LOD: basura invisible si > renderDistance, halo solo <60u
-- GC: dispose geometrías al destruir
-
-**Estructura Modular:**
-```
-public/                 (assets estáticos copiados tal cual a dist/)
-  scene.gltf, scene.bin (modelo WALL·E)
-  textures/             (planetas, sol, luna, anillos, materiales del modelo)
-src/
-  config/PlanetsConfig.js (datos planetas, materiales, trash, enemigos)
-  core/Game.js (loop, orquestación, pausa, spawn)
-  core/Input.js (teclado, ratón, gamepad, táctil, pointer lock)
-  utils/assets.js (rutas de assets relativas a la base del despliegue)
-  utils/AdaptiveResolution.js
-  utils/MobileControls.js (joystick dual + botones)
-  entities/Planet.js, SolarSystem.js, WallE.js, Trash.js, Enemy.js, Refinery.js, Civilization.js
-  systems/Combat.js
-  ui/HUD.js, HoloMenu.js
-.github/workflows/deploy-pages.yml (build + deploy a GitHub Pages)
-```
-
-### Controles Adaptativos
-- **PC**: WASD mover, Q/E subir/bajar, Ratón mirar (el puntero se captura al iniciar; ESC lo libera y pausa), Click izq disparar, F alternativo, 1/2 arma, Shift boost, Espacio depositar en refinería, C cámara, ESC/P pausa, botón ❚❚ en el HUD
-- **Móvil**: Joystick izq movimiento, der cámara, botones 🔫🚀📦📷 y ▲▼ (subir/bajar)
-- **TV/Gamepad**: Stick izq mover, der mirar, A/X depositar, RT/RB disparar, Y cámara, B/LT boost, D-pad ▲▼ subir/bajar, Start pausa
-
-## 📦 Recursos del Repositorio Usados
-
-- `public/scene.gltf` + `public/scene.bin` + `public/textures/material_0_*` → WALL·E modelo principal
-- `public/textures/earth_baseColor.jpeg`, `mars_`, `jupiter_`, `mercury_`, `venus_`, `saturn_`, `uranus_`, `neptune_`, `moon_`, `saturn_ring_`, `material_baseColor.jpeg` (sol) → Texturas planetas
-
-Todas cargadas con `TextureLoader` a través de `assetUrl()` (respeta `import.meta.env.BASE_URL`), `colorSpace = SRGB`, fallback a color sólido si falla.
-
-## 🛠️ Instalación y Build
-
-```bash
-npm install
-npm run dev      # dev 5173
-npm run build    # dist/
-npm run preview  # preview build
-```
-
-Build genera `dist/` con rutas relativas, Three.js en su propio chunk (~135 kB gzip) y el código del juego (~36 kB gzip), más `textures/` y el modelo GLTF.
-
-## ✅ Errores Comprobados y Solucionados
-
-Ver `IDEAS_MEJORA.md` sección checklist. Resumen:
-- **El juego no cargaba en GitHub Pages** (se servía el código sin compilar) → workflow de build + deploy, `base: './'`, assets en `public/`
-- Texturas de planetas nunca cargaban (`setPath('/')` generaba `//textures/...`) → `assetUrl()`
-- Movimiento/disparo/boost que no se detenían al soltar la tecla → `InputSystem` reescrito
-- Giro infinito con el ratón y salto al capturar el puntero → delta por frame + filtro
-- A/D invertidos y alabeo al cabecear → eje derecho corregido, Euler `YXZ`
-- ESC no pausaba con el puntero capturado → pausa automática al perder la captura
-- Estrellas invisibles por la niebla, notificaciones tapadas por el menú, `alert()` bloqueante
-- Colisión con sol/planetas, zona segura de aparición, periodo de gracia de enemigos
-- Modelo WALL·E → fallback + onError · Memory leaks → dispose · FPS móvil → adaptive DPR · Host preview → `allowedHosts: true`
-
-## 💡 Ideas Futuro
-
-Ver archivo `IDEAS_MEJORA.md` con roadmap detallado: narrativa episódica, tractor beam, clima espacial, facciones, jefes, hacking, Web Workers, WebGPU, PWA offline, multijugador WebRTC, audio 3D, modo museo NASA, etc.
+## ✅ Errores corregidos
+- **Agua, gas, polímero y vidrio eran imposibles de conseguir** → Venus, Tierra, Júpiter, Saturno y Neptuno
+  no se podían civilizar. Nuevos tipos de basura por planeta y gotas de agua.
+- WALL·E miraba hacia la cámara (giro de 180° sobrante).
+- La zona táctil tapaba los botones del HUD; controles fijos pequeños y superpuestos en móvil.
+- "Nueva misión" conservaba civilizaciones y enemigos; al morir se reaparecía en una posición antigua.
+- El volumen no hacía nada; el estado "huida" de los enemigos no existía.
+- Detección táctil inconsistente entre módulos; `shadowMap` alternado sin luces con sombra (recompilaba shaders).
+- Además de los ya resueltos anteriormente (GitHub Pages, texturas, input pegado, pointer lock, etc.).
 
 ## 📄 Licencia
 
 - Código: MIT
-- Modelo WALL·E: CC-BY-4.0 por Omshivam (https://sketchfab.com/Omshivam) - Crédito obligatorio: "This work is based on 'WALL-E' (https://sketchfab.com/3d-models/wall-e-b39d369914134d8ebd3f5d953e612498) by Omshivam licensed under CC-BY-4.0"
+- Modelos 3D (CC-BY-4.0, crédito obligatorio):
+  - This work is based on "WALL-E" (https://sketchfab.com/3d-models/wall-e-b39d369914134d8ebd3f5d953e612498) by Omshivam licensed under CC-BY-4.0
+  - This work is based on "Asteroids Pack (rocky version)" (https://sketchfab.com/3d-models/asteroids-pack-rocky-version-adde1ecf129e4509be8af61b84bafa85) by SebastianSosnowski (https://sketchfab.com/SebastianSosnowski) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+  - This work is based on "drop of water" (https://sketchfab.com/3d-models/drop-of-water-dcbdc5e8905449ad95a47720e4d3c57c) by furret (https://sketchfab.com/ff.ferretti02) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+  - This work is based on "Nave Espacial UFO" (https://sketchfab.com/3d-models/nave-espacial-ufo-f7a5527258ce49dbad645bd4d1530a09) by olamultimedia (https://sketchfab.com/olamultimedia) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+  - This work is based on "B90 Taxi (The fifth element)" (https://sketchfab.com/3d-models/b90-taxi-the-fifth-element-b4253a3ffdaa4d229205b9d29b8bdfda) by payotdirlyesne (https://sketchfab.com/payotdirlyesne) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
 - Texturas planetarias: verificar licencia original, uso educativo
 
 ## 🙏 Créditos

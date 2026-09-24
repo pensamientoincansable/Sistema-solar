@@ -2,9 +2,12 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="description" content="WALL·E Recolector de Basura Espacial - Juego en el Sistema Solar con menú holográfico" />
-  <meta name="theme-color" content="#00f0ff" />
+  <meta name="theme-color" content="#00131f" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>WALL·E • Sistema Solar - Recolector Galáctico</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -42,61 +45,88 @@
   <!-- Canvas juego -->
   <canvas id="game-canvas" tabindex="0"></canvas>
 
-  <!-- Holographic Menu -->
+  <!-- Menú holográfico -->
   <div id="holo-menu">
     <div class="holo-container">
       <div class="holo-left">
-        <h1>WALL·E<br>RECOLECTOR</h1>
+        <h1>WALL·E <br>RECOLECTOR</h1>
         <div class="subtitle">SISTEMA SOLAR • MISIÓN GALÁCTICA</div>
 
         <div class="menu-options">
-          <button class="holo-btn active" id="btn-play">▶ Iniciar Misión <small>Explora y recolecta basura espacial</small></button>
-          <button class="holo-btn" id="btn-continue" style="display:none">↻ Continuar <small>Volver a la misión actual</small></button>
-          <button class="holo-btn" id="btn-planets">🪐 Sistema Solar <small>8 planetas, cada uno con civilización única</small></button>
-          <button class="holo-btn" id="btn-civilization">🏗️ Civilizaciones <small>Construye con materiales refinados</small></button>
-          <button class="holo-btn" id="btn-settings">⚙️ Configuración <small>PC / Móvil / TV - Resolución adaptativa</small></button>
-          <button class="holo-btn" id="btn-exit">⏻ Salir <small>Pausa / Salir al menú</small></button>
+          <div class="menu-primary" id="menu-primary">
+            <button class="holo-btn primary" id="btn-continue" type="button" style="display:none">↻ Continuar <small>Volver a la misión actual</small></button>
+            <button class="holo-btn primary active" id="btn-play" type="button">▶ Iniciar misión <small>Explora y recolecta basura espacial</small></button>
+          </div>
+          <div class="menu-grid">
+            <button class="holo-btn tab-btn" id="btn-goal" data-section="goal" type="button">💡 Objetivo</button>
+            <button class="holo-btn tab-btn" id="btn-planets" data-section="planets" type="button">🪐 Planetas</button>
+            <button class="holo-btn tab-btn" id="btn-civilization" data-section="civilization" type="button">🏗️ Civilizaciones</button>
+            <button class="holo-btn tab-btn" id="btn-settings" data-section="settings" type="button">⚙️ Ajustes</button>
+            <button class="holo-btn" id="btn-tutorial" type="button">🎓 Tutorial</button>
+            <button class="holo-btn tab-btn" id="btn-credits" data-section="credits" type="button">ⓘ Créditos</button>
+          </div>
+          <button class="holo-btn subtle" id="btn-exit" type="button">⏻ Salir <small>Pausa / cerrar</small></button>
         </div>
 
-        <div style="margin-top:20px;display:flex;gap:8px;flex-wrap:wrap">
-          <span style="font-size:0.65rem;padding:4px 8px;border:1px solid rgba(0,240,255,0.3);border-radius:12px;background:rgba(0,240,255,0.08)">WASD Mover</span>
-          <span style="font-size:0.65rem;padding:4px 8px;border:1px solid rgba(0,240,255,0.3);border-radius:12px;background:rgba(0,240,255,0.08)">Ratón Mirar</span>
-          <span style="font-size:0.65rem;padding:4px 8px;border:1px solid rgba(0,240,255,0.3);border-radius:12px;background:rgba(0,240,255,0.08)">Click Disparar</span>
-          <span style="font-size:0.65rem;padding:4px 8px;border:1px solid rgba(0,240,255,0.3);border-radius:12px;background:rgba(0,240,255,0.08)">C Cámara</span>
-          <span style="font-size:0.65rem;padding:4px 8px;border:1px solid rgba(0,240,255,0.3);border-radius:12px;background:rgba(0,240,255,0.08)">Espacio Depositar</span>
+        <div class="key-chips desktop-only">
+          <span>WASD mover</span><span>Ratón mirar</span><span>Clic disparar</span><span>Rueda zoom</span><span>Espacio acción</span><span>T tienda</span>
         </div>
       </div>
 
       <div class="holo-right">
+        <div class="holo-card active" id="section-goal">
+          <h3>💡 Objetivo</h3>
+          <div class="goal-text">
+            <p>Eres <b>WALL·E</b>, recolector del sistema solar. Recoge basura orbital y <b>💧 gotas de agua</b> (abundan cerca de la Tierra), llévalas a las <b>refinerías ◆</b> y construye civilizaciones adaptadas a cada planeta.</p>
+            <ul>
+              <li>🛸 <b>OVNIs</b>: roban basura con su rayo tractor y te disparan. Derríbalos para recuperarla.</li>
+              <li>☄️ <b>Lluvias de asteroides</b>: atacan las refinerías. Destrúyelos y <b>repara</b> las dañadas manteniendo ACCIÓN a su lado.</li>
+              <li>🚕 <b>Taxi-Mercader</b>: vende armas y mejoras a cambio de créditos (CR).</li>
+            </ul>
+          </div>
+        </div>
+
         <div class="holo-card" id="section-planets">
-          <h3>🛰️ Mapa Estelar</h3>
+          <h3>🛰️ Mapa estelar</h3>
           <div class="planet-grid" id="planet-grid"></div>
           <div id="planet-info" class="planet-info"></div>
-          <div style="margin-top:10px;font-size:0.7rem;opacity:0.6">Cada planeta genera basura única y permite una civilización adaptada. Acércate y refina.</div>
         </div>
 
         <div class="holo-card" id="section-civilization">
-          <h3>📦 Materiales & Civilización</h3>
-          <div id="civilization-progress" style="font-size:0.75rem;margin-bottom:8px;color:#ffe600">0/8 planetas (0%) - 0 estructuras</div>
+          <h3>📦 Materiales y civilización</h3>
+          <div id="civilization-progress" class="civ-progress">0/8 planetas (0%) - 0 estructuras</div>
           <div class="materials-list" id="materials-list"></div>
-          <div style="margin-top:10px;display:flex;gap:6px">
-            <select id="build-planet-select" class="holo-select" style="flex:1"></select>
-            <button id="btn-build" class="holo-btn" style="padding:6px 12px;font-size:0.7rem">Construir</button>
+          <div class="build-row">
+            <select id="build-planet-select" class="holo-select" aria-label="Planeta"></select>
+            <button id="btn-build" class="holo-btn small-btn" type="button">Construir</button>
           </div>
         </div>
 
         <div class="holo-card" id="section-settings">
-          <h3>⚙️ Sistema Adaptativo</h3>
-          <div class="settings-row"><span>Calidad</span><select id="setting-quality" class="holo-select"><option>Auto (Adaptativa)</option><option>Baja (Móvil)</option><option>Media</option><option>Alta (PC)</option><option>Ultra (TV 4K)</option></select></div>
-          <div class="settings-row"><span>Cámara inicial</span><select id="setting-camera" class="holo-select"><option>Tercera persona</option><option>Primera persona</option></select></div>
-          <div class="settings-row"><span>Audio</span><input id="setting-sound" type="range" class="holo-range" min="0" max="100" value="70" /></div>
-          <div style="margin-top:8px;font-size:0.65rem;opacity:0.5">Optimizado: LOD planetario, instancing basura, frustum culling, pixel ratio dinámico, sombras adaptativas. Soporte Gamepad y táctil.</div>
+          <h3>⚙️ Ajustes</h3>
+          <div class="settings-row"><label for="setting-quality">Calidad gráfica</label><select id="setting-quality" class="holo-select"><option>Auto (adaptativa)</option><option>Baja (móvil)</option><option>Media</option><option>Alta (PC)</option><option>Ultra (TV 4K)</option></select></div>
+          <div class="settings-row"><label for="setting-camera">Cámara inicial</label><select id="setting-camera" class="holo-select"><option>Tercera persona</option><option>Primera persona</option></select></div>
+          <div class="settings-row slider"><label for="setting-look">Sensibilidad de cámara <small class="touch-only">(joystick derecho)</small><small class="desktop-only">(mando)</small></label><div class="range-wrap"><input id="setting-look" type="range" class="holo-range" min="0.3" max="2.5" step="0.1" value="1" /><output id="setting-look-val">1.0×</output></div></div>
+          <div class="settings-row slider desktop-only"><label for="setting-mouse">Sensibilidad del ratón</label><div class="range-wrap"><input id="setting-mouse" type="range" class="holo-range" min="0.3" max="2.5" step="0.1" value="1" /><output id="setting-mouse-val">1.0×</output></div></div>
+          <div class="settings-row slider touch-only"><label for="setting-scale">Tamaño de los controles</label><div class="range-wrap"><input id="setting-scale" type="range" class="holo-range" min="0.85" max="1.4" step="0.05" value="1" /><output id="setting-scale-val">100%</output></div></div>
+          <div class="settings-row touch-only"><label for="setting-vibration">Vibración</label><input id="setting-vibration" type="checkbox" class="holo-toggle" checked /></div>
+          <div class="settings-row touch-only"><label for="setting-fullscreen">Pantalla completa al jugar</label><input id="setting-fullscreen" type="checkbox" class="holo-toggle" checked /></div>
+          <div class="settings-row slider"><label for="setting-sound">Volumen</label><div class="range-wrap"><input id="setting-sound" type="range" class="holo-range" min="0" max="100" step="1" value="70" /><output id="setting-sound-val">70</output></div></div>
+          <button id="btn-tutorial-2" class="holo-btn small-btn wide" type="button">🎓 Ver tutorial de controles</button>
         </div>
 
-        <div class="holo-card" style="border-color:rgba(255,230,0,0.3)">
-          <h3 style="color:#ffe600">💡 Objetivo</h3>
-          <div style="font-size:0.75rem;line-height:1.4">
-            Eres WALL·E, recolector en el sistema solar. Recolecta basura orbital, llévala a la refinería (toroides brillantes), transforma en materiales y construye civilizaciones adaptadas a cada planeta. ¡Cuidado con drones piratas que roban basura! Usa láser (infinito) y plasma (potente).
+        <div class="holo-card" id="section-credits">
+          <h3>ⓘ Créditos</h3>
+          <div class="credits">
+            <p>Modelos 3D con licencia <b>CC BY 4.0</b> (Sketchfab):</p>
+            <ul>
+              <li>🤖 «WALL-E» — <b>Omshivam</b></li>
+              <li>☄️ «Asteroids Pack (rocky version)» — <b>SebastianSosnowski</b></li>
+              <li>💧 «drop of water» — <b>furret</b> (ff.ferretti02)</li>
+              <li>🛸 «Nave Espacial UFO» — <b>olamultimedia</b></li>
+              <li>🚕 «B90 Taxi (The fifth element)» — <b>payotdirlyesne</b></li>
+            </ul>
+            <p class="muted">Licencias completas en <code>assets/*/license.txt</code>. Versiones optimizadas generadas con <code>scripts/optimize-assets.mjs</code>.</p>
           </div>
         </div>
       </div>
@@ -105,70 +135,112 @@
 
   <!-- HUD -->
   <div id="hud">
-    <div class="hud-top">
-      <div class="hud-panel">
-        <h4>❤️ Integridad</h4>
-        <div class="bar"><div id="health-bar" class="bar-fill" style="width:100%"></div></div>
-        <div style="display:flex;justify-content:space-between;font-size:0.7rem"><span id="health-text">100%</span><span id="hud-planet">🌍 Tierra (60 u)</span></div>
-      </div>
-      <div class="hud-panel" style="text-align:center">
-        <h4>🗑️ Basura</h4>
-        <div class="trash-counter"><span id="trash-count">0</span>/<span id="trash-capacity">50</span></div>
-        <div id="refinery-hint" style="display:none;font-size:0.7rem;color:#00f0ff;margin-top:4px;background:rgba(0,240,255,0.15);padding:4px;border-radius:4px">⭘ Depositar</div>
-      </div>
-      <div class="hud-panel">
-        <h4>🔫 Armamento</h4>
-        <div style="font-family:Orbitron;font-size:0.9rem"><span id="hud-weapon">LÁSER</span> | <span id="hud-ammo" style="color:#ffe600">∞</span></div>
-        <div style="display:flex;justify-content:space-between;gap:8px;font-size:0.65rem;opacity:0.7;margin-top:4px"><span>1 Láser • 2 Plasma</span><span id="hud-speed">0 u/s</span></div>
-      </div>
-      <button id="btn-pause" class="hud-pause" type="button" title="Pausa (ESC / P)" aria-label="Pausa">❚❚</button>
+    <div class="hud-status">
+      <div class="stat-row"><span class="stat-icon" aria-hidden="true">❤</span><div class="bar"><div id="health-bar" class="bar-fill" style="width:100%"></div></div><span id="health-text" class="stat-val">100</span></div>
+      <div class="stat-row"><span class="stat-icon" aria-hidden="true">🗑</span><div class="bar"><div id="cargo-bar" class="bar-fill cargo" style="width:0%"></div></div><span class="stat-val"><b id="trash-count">0</b>/<span id="trash-capacity">50</span></span></div>
+      <div class="stat-row chips"><span id="hud-credits" class="chip credits">60 CR</span><span id="hud-weapon-chip" class="chip weapon">🔹 LÁSER ∞</span></div>
+      <div id="hud-planet" class="stat-sub">🌍 Tierra</div>
     </div>
 
-    <div class="hud-center">
-      <div id="crosshair" class="crosshair"></div>
+    <div class="hud-topcenter">
+      <div id="hud-objective" class="objective"></div>
+      <div id="hud-alert" class="alert-banner"></div>
     </div>
 
-    <div class="hud-bottom">
-      <div class="hud-panel">
-        <h4>📦 Inventario Nave</h4>
-        <div id="hud-materials" class="materials-list" style="max-height:100px"></div>
+    <div class="hud-topright">
+      <div class="hud-buttons">
+        <button id="btn-zoom" class="hud-btn hud-touch-btn touch-only" data-action="zoom" data-level="0" type="button" aria-label="Distancia de cámara"><span class="mob-icon" data-icon="eye"></span><span class="zoom-dots"><i></i><i></i><i></i><i></i></span></button>
+        <button id="btn-pause" class="hud-btn" type="button" title="Pausa (ESC / P)" aria-label="Pausa"><span class="mob-icon" data-icon="pause"></span></button>
       </div>
-      <div style="display:flex;gap:12px;align-items:flex-end">
-        <div class="hud-panel" style="min-width:auto;padding:8px">
-          <div class="mini-map"><canvas id="minimap-canvas"></canvas></div>
-          <div style="text-align:center;font-size:0.6rem;margin-top:4px;opacity:0.7">MINIMAPA</div>
-        </div>
-        <div class="hud-panel" style="min-width:120px">
-          <h4>🎮 Controles</h4>
-          <div style="font-size:0.65rem;line-height:1.5">
-            WASD + Ratón · Q/E subir/bajar<br>
-            Shift Boost · Click/F disparar<br>
-            C Cámara · 1/2 arma<br>
-            ESPACIO depositar · ESC pausa
-          </div>
-        </div>
+      <div class="mini-map"><canvas id="minimap-canvas"></canvas></div>
+    </div>
+
+    <div class="hud-center"><div id="crosshair" class="crosshair"></div></div>
+    <div id="zoom-indicator" class="zoom-indicator"></div>
+    <div id="hud-markers"></div>
+    <div id="damage-vignette"></div>
+
+    <div id="context-prompt" class="context-prompt hidden">
+      <span id="context-key" class="cp-key">ESPACIO</span>
+      <span id="context-text" class="cp-text"></span>
+      <div class="cp-progress"><i id="context-progress-fill"></i></div>
+    </div>
+
+    <div class="hud-bottomleft desktop-only">
+      <div class="hud-panel">
+        <h4>📦 Bodega</h4>
+        <div id="hud-materials" class="materials-list compact"></div>
+      </div>
+    </div>
+    <div id="hud-weapon-bar" class="weapon-bar desktop-only"></div>
+    <div class="hud-bottomright desktop-only">
+      <div class="hud-panel help">
+        <h4>🎮 Controles</h4>
+        <div>WASD + ratón · Q/E subir/bajar · Shift turbo</div>
+        <div>Clic/F disparar · 1-4 armas · Rueda zoom</div>
+        <div>Espacio acción (mantén = reparar) · T tienda</div>
+        <div>V distancias · C 1ª/3ª persona · Esc pausa</div>
+        <div class="muted"><span id="hud-speed">0 u/s</span></div>
       </div>
     </div>
   </div>
 
-  <!-- Mobile Controls -->
-  <div id="mobile-controls">
-    <div id="joystick-left" class="joystick-zone"><div class="joystick-base"><div class="joystick-stick"></div></div></div>
-    <div id="joystick-right" class="joystick-zone"><div class="joystick-base"><div class="joystick-stick"></div></div></div>
-    <div class="action-buttons">
-      <button class="mob-btn" data-action="shoot" type="button" aria-label="Disparar">🔫</button>
-      <button class="mob-btn" data-action="boost" type="button" aria-label="Boost">🚀</button>
-      <button class="mob-btn" data-action="collect" type="button" aria-label="Depositar">📦</button>
-      <button class="mob-btn" data-action="camera" type="button" aria-label="Cámara">📷</button>
-    </div>
-    <div class="action-buttons vertical">
-      <button class="mob-btn small" data-action="up" type="button" aria-label="Subir">▲</button>
-      <button class="mob-btn small" data-action="down" type="button" aria-label="Bajar">▼</button>
+  <!-- Controles táctiles (joysticks dinámicos + botones) -->
+  <div id="mobile-controls" aria-hidden="true">
+    <div id="touch-zone"></div>
+    <div id="joy-hint-left" class="joy-hint left"><span>MOVER</span></div>
+    <div id="joy-hint-right" class="joy-hint right"><span>CÁMARA</span></div>
+    <div id="joy-move" class="dyn-joystick"><div class="dyn-knob"></div></div>
+    <div id="joy-look" class="dyn-joystick look"><div class="dyn-knob"></div></div>
+
+    <button class="mob-btn mob-up" data-action="up" type="button" aria-label="Subir"><span class="mob-icon" data-icon="up"></span></button>
+    <button class="mob-btn mob-down" data-action="down" type="button" aria-label="Bajar"><span class="mob-icon" data-icon="down"></span></button>
+    <button class="mob-btn mob-shoot" data-action="shoot" type="button" aria-label="Disparar"><span class="mob-icon" data-icon="shoot"></span></button>
+    <button class="mob-btn mob-boost" data-action="boost" type="button" aria-label="Turbo"><span class="mob-icon" data-icon="boost"></span><span class="mob-label">TURBO</span></button>
+    <button class="mob-btn mob-action dim" data-action="action" type="button" aria-label="Acción"><span class="mob-icon" data-icon="hand"></span><span class="mob-label">ACCIÓN</span></button>
+    <button class="mob-btn mob-weapon" data-action="weapon" type="button" aria-label="Cambiar arma"><span class="mob-icon" data-icon="weapon"></span><span class="mob-label">LÁSER</span></button>
+  </div>
+
+  <!-- Notificaciones (fuera del HUD: también visibles sobre el menú) -->
+  <div id="notifications" aria-live="polite"></div>
+
+  <!-- Tienda del Taxi-Mercader -->
+  <div id="shop-panel" aria-hidden="true">
+    <div class="shop-box" role="dialog" aria-label="Tienda del Taxi-Mercader">
+      <div class="shop-header">
+        <div class="shop-title">🚕 TAXI-MERCADER<small>Armas y mejoras · cualquier planeta · sin preguntas</small></div>
+        <div id="shop-credits" class="shop-credits">0 CR</div>
+        <button id="shop-close" class="shop-close" type="button" aria-label="Cerrar tienda"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></button>
+      </div>
+      <div class="shop-tabs">
+        <button class="shop-tab active" data-tab="weapons" type="button">🔫 Armas</button>
+        <button class="shop-tab" data-tab="upgrades" type="button">⚙️ Mejoras</button>
+      </div>
+      <div id="shop-list" class="shop-list"></div>
+      <div id="shop-status" class="shop-status"></div>
     </div>
   </div>
 
-  <!-- Notifications -->
-  <div id="notifications"></div>
+  <!-- Tutorial -->
+  <div id="tutorial" aria-hidden="true">
+    <div id="tutorial-ring" class="tut-ring"></div>
+    <div id="tutorial-ring2" class="tut-ring"></div>
+    <div id="tutorial-arrow" class="tut-arrow"><svg viewBox="0 0 44 44" aria-hidden="true"><path d="M4 22h28M22 10l12 12-12 12" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div id="tutorial-card" class="tut-card" role="dialog" aria-live="polite">
+      <div class="tut-head"><span id="tutorial-step" class="tut-step">1 / 7</span><span class="tut-badge">TUTORIAL</span></div>
+      <h3 id="tutorial-title"></h3>
+      <p id="tutorial-text"></p>
+      <div id="tutorial-task" class="tut-task"></div>
+      <div class="tut-actions">
+        <button id="tutorial-skip" class="tut-skip" type="button">Saltar</button>
+        <div id="tutorial-dots" class="tut-dots"></div>
+        <button id="tutorial-next" class="tut-next" type="button">Siguiente ▶</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Aviso de orientación (móvil en vertical) -->
+  <div id="rotate-hint"><div>📱↻<br>Gira el móvil a horizontal para jugar mejor</div></div>
 
   <!-- Main -->
   <script type="module" src="/src/main.js"></script>
