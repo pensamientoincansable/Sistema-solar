@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { loadModel, extractCenteredGeometries } from '../utils/ModelLibrary.js';
+import { asteroidLootForPlanet } from '../config/CivilizationConfig.js';
 
 const _v1 = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
@@ -163,6 +164,24 @@ export class AsteroidSystem {
     if (i >= 0) this.asteroids.splice(i, 1);
   }
 
+  /**
+   * Paquetes raros liberados por un asteroide. El objetivo de la oleada es una
+   * refinería, por lo que su `planetId` determina el material x20; los otros
+   * dos paquetes siguen la distancia orbital definida en CivilizationConfig.
+   */
+  _releaseLoot(a, position) {
+    const loot = asteroidLootForPlanet(a && a.target && a.target.planetId);
+    const planetId = a && a.target && a.target.planetId;
+    if (this.trashSystem && typeof this.trashSystem.spawnResourceDrop === 'function') {
+      for (const item of loot) this.trashSystem.spawnResourceDrop(position, item.resource, item.amount, item.planetId || planetId);
+    } else if (this.trashSystem && typeof this.trashSystem.spawnNear === 'function') {
+      // Compatibilidad con una partida/integración antigua que aún no tenga
+      // paquetes con cantidad: al menos deja restos físicos recolectables.
+      this.trashSystem.spawnNear(position, loot.length, loot.map(item => item.resource));
+    }
+    return loot;
+  }
+
   /** Daño de los proyectiles del jugador. */
   damage(a, amount) {
     if (!a.alive) return false;
@@ -180,8 +199,11 @@ export class AsteroidSystem {
         this._spawnAsteroid(a.target, a.radius * 0.55, _v2.copy(pos).addScaledVector(_v1, a.radius * 0.6), v, true);
       }
     }
+    const loot = this._releaseLoot(a, pos);
+    a.loot = loot;
+    // Restos visuales comunes además de los tres paquetes raros.
     if (this.trashSystem) this.trashSystem.spawnNear(pos, a.isFragment ? 1 : 2, ['rock', 'rock', 'satellite']);
-    if (this.onDestroyed) { try { this.onDestroyed(a, pos); } catch (e) { /* noop */ } }
+    if (this.onDestroyed) { try { this.onDestroyed(a, pos, loot); } catch (e) { /* noop */ } }
     return true;
   }
 

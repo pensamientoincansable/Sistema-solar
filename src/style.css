@@ -219,6 +219,8 @@ body.touch-ui .desktop-only { display: none !important; }
 .planet-info .reqs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .planet-info .req { padding: 2px 7px; border-radius: 10px; font-size: 0.66rem; border: 1px solid rgba(255,59,59,0.4); background: rgba(255,59,59,0.08); }
 .planet-info .req.ok { border-color: rgba(46,204,64,0.5); background: rgba(46,204,64,0.1); }
+.planet-info .access-status { margin-top: 7px; padding: 5px 7px; border-radius: 6px; border: 1px solid rgba(255,193,7,0.4); background: rgba(255,193,7,0.07); font-size: 0.7rem; }
+.planet-info .access-status.ok { border-color: rgba(46,204,64,0.5); background: rgba(46,204,64,0.1); }
 
 .civ-progress { font-size: 0.78rem; margin-bottom: 8px; color: var(--holo-yellow); }
 .build-row { margin-top: 10px; display: flex; gap: 8px; }
@@ -918,9 +920,11 @@ body.touch-ui .hud-topright { flex-direction: column; align-items: flex-end; }
 body.cinematic .hud-btn.btn-cinematic { background: rgba(255,208,0,0.3); box-shadow: 0 0 16px rgba(255,208,0,0.6); }
 .hud-btn.btn-fullscreen.on { background: rgba(0,240,255,0.28); box-shadow: 0 0 14px rgba(0,240,255,0.5); }
 
-/* Aviso de "mantén para aterrizar" */
+/* Aviso de acceso / aterrizaje */
 .context-prompt.ctx-land { border-color: rgba(57,255,122,0.85); box-shadow: 0 0 22px rgba(57,255,122,0.35); }
 .context-prompt.ctx-land .cp-key { background: #39ff7a; color: #00240f; }
+.context-prompt.ctx-land-locked { border-color: rgba(255,208,0,0.85); box-shadow: 0 0 22px rgba(255,208,0,0.28); }
+.context-prompt.ctx-land-locked .cp-key { background: #ffd84a; color: #2b2100; }
 
 /* ======================================================= VISIÓN CINEMÁTICA */
 #cine-bars { position: fixed; inset: 0; z-index: 60; pointer-events: none; display: none; }

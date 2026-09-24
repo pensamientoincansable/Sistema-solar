@@ -70,7 +70,7 @@
         </div>
 
         <div class="key-chips desktop-only">
-          <span>WASD mover</span><span>Ratón mirar</span><span>Clic disparar</span><span>Rueda zoom</span><span>Espacio acción</span><span>T tienda</span><span>G civilizar</span><span>B cinemática</span><span>H pantalla completa</span>
+          <span>WASD mover</span><span>Ratón mirar</span><span>Clic disparar</span><span>Rueda zoom</span><span>Espacio acción</span><span>T tienda</span><span>G entrar a colonia</span><span>B cinemática</span><span>H pantalla completa</span>
         </div>
       </div>
 
@@ -78,9 +78,9 @@
         <div class="holo-card active" id="section-goal">
           <h3>💡 Objetivo</h3>
           <div class="goal-text">
-            <p>Eres <b>WALL·E</b>, recolector del sistema solar. Recoge basura orbital y <b>💧 gotas de agua</b> (abundan cerca de la Tierra), llévalas a las <b>refinerías ◆</b> y <b>aterriza</b> para fundar civilizaciones desde cero en cada planeta.</p>
+            <p>Eres <b>WALL·E</b>, recolector del sistema solar. Recoge basura orbital y <b>💧 gotas de agua</b> (en cantidad moderada cerca de la Tierra), llévalas a las <b>refinerías ◆</b> y reúne los requisitos para <b>desbloquear el acceso</b> a cada planeta desde Civilizaciones.</p>
             <ul>
-              <li>🌍 <b>Civilizar</b>: vuela bajo sobre un planeta y <b>mantén G / 🌍</b> para aterrizar. Empiezas con constructores, granjeros, leñadores y mineros (terrícolas, marcianos…). Arrastra para girar la cámara; G o Esc para despegar.</li>
+              <li>🌍 <b>Superficie</b>: reúne todos los materiales del planeta, pulsa <b>Desbloquear acceso</b> en el menú y después vuela bajo y <b>mantén G / 🌍</b> para entrar. La colonia se juega en la superficie: G o Esc para despegar.</li>
               <li>💾 <b>Partida</b>: el progreso se guarda solo en este navegador. En el menú puedes descargar un archivo <code>.json</code> y cargarlo en otro dispositivo.</li>
               <li>🎬 <b>Visión cinemática</b> (B / 🎬): la cámara gira 360º. El mismo botón restaura el ángulo original. En PC, <b>H / ⛶</b> pone pantalla completa.</li>
               <li>🛸 <b>OVNIs</b>: roban basura con su rayo tractor y te disparan. Derríbalos para recuperarla.</li>
@@ -97,12 +97,12 @@
         </div>
 
         <div class="holo-card" id="section-civilization">
-          <h3>📦 Materiales y civilización</h3>
-          <div id="civilization-progress" class="civ-progress">0/8 planetas (0%) - 0 estructuras</div>
+          <h3>📦 Materiales y accesos a superficie</h3>
+          <div id="civilization-progress" class="civ-progress">0/8 accesos (0%) · 0 colonias en superficie</div>
           <div class="materials-list" id="materials-list"></div>
           <div class="build-row">
             <select id="build-planet-select" class="holo-select" aria-label="Planeta"></select>
-            <button id="btn-build" class="holo-btn small-btn" type="button">Construir</button>
+            <button id="btn-build" class="holo-btn small-btn" type="button">Desbloquear acceso</button>
           </div>
         </div>
 
@@ -165,7 +165,7 @@
 
     <div class="hud-topright">
       <div class="hud-buttons">
-        <button id="btn-civilize" class="hud-btn hud-touch-btn btn-civilize" data-action="civilize" type="button" title="Mantén para aterrizar y civilizar (G)" aria-label="Civilizar"><span class="mob-icon" data-icon="civilize"></span><span class="btn-key desktop-only">G</span></button>
+        <button id="btn-civilize" class="hud-btn hud-touch-btn btn-civilize" data-action="civilize" type="button" title="Mantén para entrar a una colonia desbloqueada (G)" aria-label="Entrar a colonia"><span class="mob-icon" data-icon="civilize"></span><span class="btn-key desktop-only">G</span></button>
         <button id="btn-cinematic" class="hud-btn hud-touch-btn btn-cinematic" data-action="cinematic" type="button" title="Visión cinemática 360º (B)" aria-label="Visión cinemática"><span class="mob-icon" data-icon="cinematic"></span><span class="btn-key desktop-only">B</span></button>
         <button id="btn-fullscreen" class="hud-btn hud-touch-btn btn-fullscreen desktop-only" data-action="fullscreen" type="button" title="Pantalla completa (H)" aria-label="Pantalla completa"><span class="mob-icon" data-icon="fullscreen"></span><span class="fb-icon" aria-hidden="true">⛶</span></button>
         <button id="btn-zoom" class="hud-btn hud-touch-btn touch-only" data-action="zoom" data-level="0" type="button" aria-label="Distancia de cámara"><span class="mob-icon" data-icon="eye"></span><span class="zoom-dots"><i></i><i></i><i></i><i></i></span></button>
@@ -199,7 +199,7 @@
         <div>Clic/F disparar · 1-4 armas · Rueda zoom</div>
         <div>Espacio acción (mantén = reparar) · T tienda</div>
         <div>V distancias · C 1ª/3ª persona · Esc pausa</div>
-        <div><b>G</b> mantén junto a un planeta = civilizar 🌍</div>
+        <div><b>G</b> mantén junto a un planeta desbloqueado = entrar a la superficie 🌍</div>
         <div><b>B</b> visión cinemática 360º · <b>H</b> pantalla completa</div>
         <div class="muted"><span id="hud-speed">0 u/s</span></div>
       </div>

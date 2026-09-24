@@ -10,9 +10,10 @@ const _v = new THREE.Vector3();
 const _zero = new THREE.Matrix4().makeScale(0, 0, 0);
 
 /**
- * WaterSystem - Gotas de agua (modelo assets/drop_of_water) que abundan
- * alrededor de la Tierra (y algunas en Neptuno). Son el ÚNICO origen de 💧 agua,
- * necesaria para Neo-Terra y Abismo Azul (antes era imposible conseguirla).
+ * WaterSystem - Gotas de agua (modelo assets/drop_of_water) alrededor de la
+ * Tierra (y algunas en Neptuno). Son el origen principal de 💧 agua, necesaria
+ * para desbloquear Neo-Terra y Abismo Azul. La cantidad está limitada para que
+ * siga siendo útil sin saturar el espacio.
  *
  * Todas las gotas se dibujan con un único InstancedMesh (1 draw call) y
  * orbitan con su planeta (posición relativa al planeta).
@@ -22,7 +23,7 @@ export class WaterSystem {
     this.scene = scene;
     this.solarSystem = solarSystem;
     this.quality = quality || {};
-    this.max = this.quality.waterCount || 70;
+    this.max = this.quality.waterCount || 56;
     this.drops = [];
     this.valuePerDrop = 5;
     this.elapsed = 0;

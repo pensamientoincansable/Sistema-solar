@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { TRASH_TYPES } from '../config/PlanetsConfig.js';
 import { getGlowTexture } from '../utils/textures.js';
+import { loadModel, extractCenteredGeometries } from '../utils/ModelLibrary.js';
 
 const _v = new THREE.Vector3();
 const _closest = { planet: null, distance: Infinity };
@@ -42,6 +43,7 @@ export class TrashSystem {
     this._randomTypes = TRASH_TYPES.filter(t => t.random !== false);
 
     try { this.spawnInitial(); } catch (e) { console.error('[Trash] spawnInitial error:', e); }
+    this._loadResourceModels();
   }
 
   _res(cfg) {
@@ -67,6 +69,28 @@ export class TrashSystem {
 
   getType(id) { return TRASH_TYPES.find(t => t.id === id) || null; }
 
+  /**
+   * Sustituye las geometrías provisionales por los modelos optimizados de
+   * /assets/esferas metal, /assets/glass_sphere, /assets/polímero y /assets/musgo.
+   * Si una descarga falla, la geometría procedural ya creada sigue funcionando.
+   */
+  _loadResourceModels() {
+    const keys = [...new Set(TRASH_TYPES.map(t => t.assetKey).filter(Boolean))];
+    for (const key of keys) {
+      loadModel(key).then((gltf) => {
+        const part = extractCenteredGeometries(gltf)[0];
+        if (!part || !part.geometry) return;
+        for (const cfg of TRASH_TYPES.filter(t => t.assetKey === key)) {
+          const resource = this.resources.get(cfg.id);
+          if (resource) resource.geometry = part.geometry;
+          for (const trash of this.trashList) {
+            if (trash.config.id === cfg.id) trash.mesh.geometry = part.geometry;
+          }
+        }
+      }).catch(() => { /* el respaldo procedural es intencionado */ });
+    }
+  }
+
   /** Tipo aleatorio para un material concreto (o cualquiera si no hay candidatos). */
   typeForMaterial(material) {
     const candidates = TRASH_TYPES.filter(t => t.material === material);
@@ -74,7 +98,19 @@ export class TrashSystem {
     return this._randomTypes[Math.floor(Math.random() * this._randomTypes.length)];
   }
 
-  createTrash(position, type = null, planetId = null) {
+  _pickWeightedMaterial(materials, planet) {
+    if (!materials || !materials.length) return null;
+    const weights = planet?.config?.resourceWeights || {};
+    const total = materials.reduce((sum, material) => sum + Math.max(0.05, Number(weights[material]) || 1), 0);
+    let roll = Math.random() * total;
+    for (const material of materials) {
+      roll -= Math.max(0.05, Number(weights[material]) || 1);
+      if (roll <= 0) return material;
+    }
+    return materials[materials.length - 1];
+  }
+
+  createTrash(position, type = null, planetId = null, valueOverride = null) {
     try {
       const cfg = type || this._randomTypes[Math.floor(Math.random() * this._randomTypes.length)];
       const res = this._res(cfg);
@@ -96,7 +132,9 @@ export class TrashSystem {
         velocity: new THREE.Vector3((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 1, (Math.random() - 0.5) * 2),
         rotationSpeed: new THREE.Vector3((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2),
         collected: false,
-        value: cfg.value
+        value: Number.isFinite(valueOverride) ? Math.max(1, valueOverride) : cfg.value,
+        resourceAmount: Number.isFinite(valueOverride) ? Math.max(1, valueOverride) : 1,
+        grouped: Number.isFinite(valueOverride) && valueOverride !== cfg.value,
       };
 
       this.group.add(mesh);
@@ -139,8 +177,10 @@ export class TrashSystem {
     _v.set(pp.x + Math.cos(angle) * dist, (Math.random() - 0.5) * 12, pp.z + Math.sin(angle) * dist);
     let type = null;
     const mats = planet.config.trashMaterials;
-    if (mats && mats.length && Math.random() < 0.78) {
-      type = this.typeForMaterial(mats[Math.floor(Math.random() * mats.length)]);
+    if (mats && mats.length && Math.random() < 0.82) {
+      // La Tierra favorece biomasa: facilita el desbloqueo sin convertirla en
+      // un recurso garantizado ni inflar el número total de objetos.
+      type = this.typeForMaterial(this._pickWeightedMaterial(mats, planet));
     }
     return this.createTrash(_v, type, planet.config.id);
   }
@@ -176,6 +216,24 @@ export class TrashSystem {
     }
   }
 
+  /**
+   * Genera un paquete único con varias unidades del mismo recurso. Mantiene la
+   * bodega legible: un asteroide no llena 20 huecos, pero sí entrega 20 unidades.
+   */
+  spawnResourceDrop(position, material, amount = 1, planetId = null) {
+    const type = this.typeForMaterial(material) || this.getType('rock');
+    if (!position || !type || !Number.isFinite(amount) || amount <= 0) return null;
+    const drop = this.createTrash(position, type, planetId, Math.round(amount));
+    if (drop) {
+      drop.resource = material;
+      drop.value = Math.round(amount);
+      drop.resourceAmount = Math.round(amount);
+      drop.grouped = true;
+      drop.mesh.scale.multiplyScalar(1 + Math.min(0.55, Math.log10(Math.max(1, amount)) * 0.16));
+    }
+    return drop;
+  }
+
   /** Genera basura alrededor de un punto. `typeIds` opcional: lista de ids a elegir. */
   spawnNear(position, amount = 3, typeIds = null) {
     if (!position) return;
@@ -183,7 +241,10 @@ export class TrashSystem {
       try {
         _v.set((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10).add(position);
         let type = null;
-        if (typeIds && typeIds.length) type = this.getType(typeIds[Math.floor(Math.random() * typeIds.length)]);
+        if (typeIds && typeIds.length) {
+          const requested = typeIds[Math.floor(Math.random() * typeIds.length)];
+          type = this.getType(requested) || this.typeForMaterial(requested);
+        }
         const t = this.createTrash(_v, type);
         if (t) t.velocity.set((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6);
       } catch (e) { /* skip */ }

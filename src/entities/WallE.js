@@ -610,7 +610,10 @@ export class WallE {
   }
 
   collectTrash(trash) {
-    return this.addCargo(trash.config.material, trash.config.value);
+    if (!trash || !trash.config) return false;
+    // Los paquetes raros de asteroide llevan la cantidad en `value` aunque
+    // ocupen una sola plaza de bodega; la basura normal usa el valor del tipo.
+    return this.addCargo(trash.config.material, Number.isFinite(trash.value) ? trash.value : trash.config.value);
   }
 
   canDeposit() { return this.trashCount > 0; }

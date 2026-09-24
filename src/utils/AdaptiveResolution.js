@@ -134,7 +134,9 @@ export class AdaptiveResolution {
       particleCount: [200, 600, 1200, 2000][this.qualityLevel],
       particleMax: [320, 500, 800, 1000][this.qualityLevel],
       trashCount: [45, 80, 150, 200][this.qualityLevel],
-      waterCount: [40, 60, 90, 110][this.qualityLevel],
+      // Agua útil para desbloquear Tierra/Neptuno, pero ya no ocupa el mapa:
+      // menos instancias también reduce el coste de transparencia en GPU.
+      waterCount: [28, 42, 60, 78][this.qualityLevel],
       enemyCount: [4, 6, 9, 12][this.qualityLevel],
       asteroidsPerWave: [3, 4, 5, 6][this.qualityLevel],
       renderDistance: [400, 800, 1500, 2500][this.qualityLevel],

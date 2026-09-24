@@ -61,6 +61,9 @@ export const PLANETS_CONFIG = [
     trashType: 'orgánico-tech',
     trashRichness: 1.0,
     trashMaterials: ['bio', 'metal', 'polymer', 'energy'],
+    // Biomasa facilitada en la Tierra para que la primera colonia no sea una
+    // búsqueda frustrante; el resto de planetas conserva pesos uniformes.
+    resourceWeights: { bio: 2.4, metal: 0.9, polymer: 0.8, energy: 0.7 },
     hasMoon: true,
     moonTexture: 'textures/moon_baseColor.jpeg',
     civilization: {
@@ -204,18 +207,20 @@ export const MATERIALS = {
 };
 
 export const TRASH_TYPES = [
-  { id: 'satellite', name: 'Satélite', model: 'cube', scale: 1.2, value: 10, material: 'metal', color: 0x888888 },
+  { id: 'satellite', name: 'Satélite', model: 'cube', assetKey: 'metalSphere', scale: 1.2, value: 10, material: 'metal', color: 0x888888, random: false },
   { id: 'panel', name: 'Panel solar', model: 'plane', scale: 1.5, value: 15, material: 'energy', color: 0x2244bb },
-  { id: 'rocket', name: 'Etapa de cohete', model: 'cylinder', scale: 2.0, value: 25, material: 'metal', color: 0xdddddd },
-  { id: 'organic', name: 'Residuo orgánico', model: 'sphere', scale: 0.8, value: 8, material: 'bio', color: 0x44aa44 },
+  { id: 'rocket', name: 'Etapa de cohete', model: 'cylinder', assetKey: 'metalSphere', scale: 2.0, value: 25, material: 'metal', color: 0xdddddd, random: false },
+  { id: 'organic', name: 'Residuo orgánico', model: 'sphere', assetKey: 'moss', scale: 0.8, value: 8, material: 'bio', color: 0x44aa44, random: false },
   { id: 'crystal', name: 'Cristal cuántico', model: 'octahedron', scale: 1.0, value: 30, material: 'crystal', color: 0xff00ff },
   { id: 'ice', name: 'Bloque de hielo', model: 'icosahedron', scale: 1.3, value: 12, material: 'ice', color: 0xa0e0ff },
   // Nuevos: sin ellos gas, polímero y vidrio no se podían conseguir
   { id: 'gas_tank', name: 'Tanque de gas', model: 'capsule', scale: 1.1, value: 14, material: 'gas', color: 0xb14dff },
-  { id: 'plastic', name: 'Plástico espacial', model: 'torus', scale: 1.0, value: 12, material: 'polymer', color: 0xff6b6b },
-  { id: 'glass', name: 'Vidrio de escotilla', model: 'tetra', scale: 1.1, value: 12, material: 'glass', color: 0x7fdbff },
+  { id: 'plastic', name: 'Plástico espacial', model: 'torus', assetKey: 'polymer', scale: 1.0, value: 12, material: 'polymer', color: 0xff6b6b, random: false },
+  { id: 'glass', name: 'Vidrio de escotilla', model: 'tetra', assetKey: 'glassSphere', scale: 1.1, value: 12, material: 'glass', color: 0x7fdbff, random: false },
   // Fragmentos de asteroide (hormigón/regolito): cinturón, Marte y asteroides destruidos
   { id: 'rock', name: 'Fragmento de asteroide', model: 'dodeca', scale: 1.0, value: 10, material: 'concrete', color: 0x9a8a78, random: false },
+  // Paquete compacto usado para el agua rara liberada por asteroides.
+  { id: 'water_capsule', name: 'Contenedor de agua', model: 'sphere', scale: 0.85, value: 5, material: 'water', color: 0x3aa8ff, random: false },
 ];
 
 /**
