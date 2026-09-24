@@ -357,6 +357,10 @@ export class Game {
 
     if (this.input) {
       this.input.onPointerLockLost = () => {
+        // En la superficie el ratón va libre (no hay captura): perderla no
+        // es una pausa. Antes esto pausaba y sacaba al jugador de la colonia
+        // justo después de aterrizar.
+        if (this.isCivMode) return;
         if (this.isPlaying && !this.shopOpen && !this.touch) this.pauseGame();
       };
       this.input.onPointerLockError = () => {
@@ -491,12 +495,22 @@ export class Game {
         this.menu.hide();
         this.menu.setContinueVisible(true);
       }
-      if (this.hud) this.hud.show();
       this._syncFullscreenButton();
-      if (this.mobile) this.mobile.setVisible(this.mobile.isMobile);
-      if (this.input) {
-        this.input.flushEvents();
-        this.input.requestPointerLock();
+      if (this.isCivMode && this.civ && this.civ.active) {
+        // Se reanuda dentro de la colonia: panel de estrategia y ratón libre
+        if (this.hud) this.hud.hide();
+        if (this.mobile) this.mobile.setVisible(false);
+        if (this.civUI) this.civUI.show();
+        if (this.input) this.input.flushEvents();
+        this._civHeldPrev = !!(this.input && this.input.civilizeHeld);
+        this._civHeldArmed = false;
+      } else {
+        if (this.hud) this.hud.show();
+        if (this.mobile) this.mobile.setVisible(this.mobile.isMobile);
+        if (this.input) {
+          this.input.flushEvents();
+          this.input.requestPointerLock();
+        }
       }
       this.canvas.focus({ preventScroll: true });
 
@@ -554,7 +568,9 @@ export class Game {
   pauseGame() {
     if (!this.isPlaying) return;
     try {
-      if (this.isCivMode) this.exitCivMode();   // la colonia no se pausa: se sale de ella
+      // En la colonia se pausa SIN salir de ella: al reanudar se vuelve a la
+      // superficie (antes se despegaba y el jugador aparecía en el espacio).
+      if (this.isCivMode && this.civUI) this.civUI.hide();
       if (this.shopOpen) this.closeShop(true);
       this.isPlaying = false;
       this.isPaused = true;
@@ -586,6 +602,7 @@ export class Game {
   /** Nueva misión: reinicia TODO (antes se conservaban civilizaciones y enemigos). */
   restartGame() {
     try {
+      if (this.isCivMode) this.exitCivMode({ silent: true });
       if (this.shopOpen) this.closeShop(true);
       if (this.walle) this.walle.resetStats();
       if (this.civilization) this.civilization.reset();
@@ -1165,7 +1182,7 @@ export class Game {
   }
 
   /** Vuelve al espacio con WALL·E y la cámara exactamente donde estaban. */
-  exitCivMode() {
+  exitCivMode({ silent = false } = {}) {
     if (!this.isCivMode || !this.civ) return false;
     const w = this.walle;
     const planet = this.civ.planet;
@@ -1201,10 +1218,12 @@ export class Game {
       if (this.hud && this.isPlaying) this.hud.show();
       if (this.mobile && this.isPlaying) this.mobile.setVisible(this.mobile.isMobile);
       if (this.input) { this.input.flushEvents(); if (this.isPlaying) this.input.requestPointerLock(); }
-      this.hud?.notify('🛰️ De vuelta al espacio: la colonia sigue produciendo', 'info');
-      audio.play('ui');
       this._needsRender = true;
-      if (this.save) this.save.autosave('despegue');
+      if (!silent) {
+        this.hud?.notify('🛰️ De vuelta al espacio: la colonia sigue produciendo', 'info');
+        audio.play('ui');
+        if (this.save) this.save.autosave('despegue');
+      }
       return true;
     } catch (e) {
       console.error('[Game] exitCivMode error:', e);
@@ -1309,7 +1328,7 @@ export class Game {
   _applyState(state, meta) {
     if (!state || !state.walle) return { ok: false, reason: 'Partida incompleta' };
     try {
-      if (this.isCivMode) this.exitCivMode();
+      if (this.isCivMode) this.exitCivMode({ silent: true });
       if (this.shopOpen) this.closeShop(true);
       const w = this.walle;
       const sw = state.walle;
@@ -1456,7 +1475,7 @@ export class Game {
       if (this.input && this.input.consumePause()) {
         const sinceChange = performance.now() - (this._lastStateChange || 0);
         if (this.shopOpen) this.closeShop();
-        else if (this.isCivMode) this.exitCivMode();          // ESC sale de la colonia
+        else if (this.isCivMode && this.isPlaying) this.exitCivMode();   // ESC sale de la colonia
         else if (sinceChange > 400) {
           if (this.isPlaying) this.pauseGame();
           else if (this.isPaused) this.resumeGame();
