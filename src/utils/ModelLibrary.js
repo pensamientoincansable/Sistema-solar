@@ -12,10 +12,14 @@ import { assetUrl } from './assets.js';
  * su geometría procedural de respaldo: el juego nunca se bloquea por un asset.
  */
 export const MODELS = {
-  asteroids: 'models/asteroids.glb',   // assets/asteroides
-  waterDrop: 'models/water_drop.glb',  // assets/drop_of_water
-  ufo: 'models/ufo.glb',               // assets/nave_espacial_ufo
-  taxi: 'models/taxi.glb',             // assets/b90_taxi_the_fifth_element
+  asteroids: 'models/asteroids.glb',       // assets/asteroides
+  waterDrop: 'models/water_drop.glb',      // assets/drop_of_water
+  ufo: 'models/ufo.glb',                   // assets/nave_espacial_ufo
+  taxi: 'models/taxi.glb',                 // assets/b90_taxi_the_fifth_element
+  metalSphere: 'models/metal_sphere.glb',  // assets/esferas metal
+  glassSphere: 'models/glass_sphere.glb',  // assets/glass_sphere
+  polymer: 'models/polymer.glb',           // assets/polímero
+  moss: 'models/moss.glb',                 // assets/musgo
 };
 
 const loader = new GLTFLoader();

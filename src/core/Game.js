@@ -107,7 +107,7 @@ export class Game {
     if (!this.quality) {
       this.quality = {
         deviceType: 'pc', qualityLevel: 2, pixelRatio: 1, particleMax: 600,
-        trashCount: 100, waterCount: 70, enemyCount: 6, asteroidsPerWave: 4, renderDistance: 1500, lowresTextures: false,
+        trashCount: 100, waterCount: 56, enemyCount: 6, asteroidsPerWave: 4, renderDistance: 1500, lowresTextures: false,
       };
     }
 
@@ -403,11 +403,14 @@ export class Game {
           this.notifyOnce('impact', `💥 Impacto en ${st.userData.label} (${Math.round(st.userData.health)}%)`, 'danger', 1.5);
         }
       };
-      a.onDestroyed = (ast) => {
+      a.onDestroyed = (ast, pos, loot = []) => {
         const cr = ast.isFragment ? 6 : 12;
         this.addCredits(cr);
         audio.play('explosion');
-        this.notifyOnce('ast', `☄️ Asteroide destruido · +${cr} CR`, 'success', 0.8);
+        const lootText = loot.length
+          ? ` · ${loot.map(item => `${(MATERIALS[item.resource] && MATERIALS[item.resource].icon) || ''}${item.amount}`).join(' ')}`
+          : '';
+        this.notifyOnce('ast', `☄️ Asteroide destruido · +${cr} CR${lootText} · recoge los paquetes y deposítalos`, 'success', 0.8);
       };
       a.onWaveEnd = (res) => {
         if (res.defended) {
@@ -427,7 +430,7 @@ export class Game {
     if (this.walle) this.walle.credits += n;
   }
 
-  /** Planetas con colonia en superficie o estructura orbital. */
+  /** Planetas con acceso desbloqueado o colonia jugable en superficie. */
   _colonizedCount() {
     const ids = new Set();
     if (this.civilization && this.civilization.built) {
@@ -798,7 +801,7 @@ export class Game {
     return land;
   }
 
-  /** Aviso de "mantén para aterrizar" cuando WALL·E vuela bajo sobre un planeta. */
+  /** Aviso de acceso/aterrizaje cuando WALL·E vuela bajo sobre un planeta. */
   _computeLandingContext() {
     const w = this.walle;
     if (!this.solarSystem || this.isCivMode) return null;
@@ -806,9 +809,24 @@ export class Game {
     if (!info.planet) return null;
     const altitude = info.distance - info.planet.config.radius;
     if (altitude > LAND_ALTITUDE) { this._landHold = 0; this._landTarget = null; return null; }
+
+    const unlocked = !this.civilization || this.civilization.isUnlocked(info.planet.config.id);
+    const name = `${info.planet.config.emoji} ${info.planet.config.name}`;
+    if (!unlocked) {
+      // Un permiso pendiente no puede convertirse en una entrada y salida
+      // instantáneas: primero se desbloquea desde Menú → Civilizaciones.
+      this._landHold = 0;
+      this._landTarget = null;
+      return {
+        type: 'land-locked',
+        key: 'MENÚ',
+        text: `Desbloquea el acceso a ${name} desde Menú → Civilizaciones`,
+        dist: info.distance,
+      };
+    }
+
     this._landTarget = info.planet;
     const key = this.touch ? 'MANTÉN 🌍' : 'MANTÉN G';
-    const name = `${info.planet.config.emoji} ${info.planet.config.name}`;
     return {
       type: 'land',
       key,
@@ -888,8 +906,10 @@ export class Game {
     if (w.trashCount >= w.trashCapacity) return '📦 Bodega llena: deposita en una refinería ◆';
     if (a && a.enabled && a.timeToNextWave < 15) return `⚠️ Lluvia de asteroides en ${Math.ceil(a.timeToNextWave)} s`;
     if (w.trashCount >= w.trashCapacity * 0.6) return `Lleva la carga a una refinería ◆ (${w.trashCount}/${w.trashCapacity})`;
-    const land = this._context && this._context.type === 'land' ? this._context : null;
-    if (land) return `🌍 ${land.text.replace(/^Aterrizar y civilizar /, 'Mantén G para civilizar ')}`;
+    const land = this._context && (this._context.type === 'land' || this._context.type === 'land-locked') ? this._context : null;
+    if (land) return land.type === 'land-locked'
+      ? `🔒 ${land.text}`
+      : `🌍 ${land.text.replace(/^Aterrizar y civilizar /, 'Mantén G para civilizar ')}`;
     return 'Recoge basura 🗑 y agua 💧 · mantén G cerca de un planeta para civilizarlo';
   }
 
@@ -1071,14 +1091,15 @@ export class Game {
   /** Acumula el tiempo que se mantiene G / 🌍 y aterriza al completarse. */
   _updateLanding(delta) {
     const held = !!(this.input && this.input.civilizeHeld);
-    if (held && this._landTarget) {
+    const target = this._landTarget;
+    const unlocked = target && (!this.civilization || this.civilization.isUnlocked(target.config.id));
+    if (held && unlocked) {
       this._landHold += delta;
       if (this._landHold >= LAND_HOLD_TIME) {
-        const planet = this._landTarget;
         this._landHold = 0;
-        this.enterCivMode(planet);
+        this.enterCivMode(target);
       }
-    } else if (!held) {
+    } else if (!held || !unlocked) {
       this._landHold = 0;
     }
   }
@@ -1089,6 +1110,10 @@ export class Game {
    */
   enterCivMode(planet) {
     if (!planet || !this.civ || this.isCivMode) return false;
+    if (this.civilization && !this.civilization.isUnlocked(planet.config.id)) {
+      this.hud?.notify(`🔒 ${planet.config.name}: reúne los materiales y desbloquea el acceso desde Menú → Civilizaciones`, 'info');
+      return false;
+    }
     const w = this.walle;
     try {
       // Normal de aterrizaje en el espacio LOCAL del planeta
@@ -1112,12 +1137,18 @@ export class Game {
 
       this.isCivMode = true;
       this._landHold = 0;
+      this._landTarget = null;
+      // El aterrizaje libera G/🌍. Hay que pulsarlo y mantenerlo de nuevo para
+      // salir; así no se vuelve al espacio en el mismo frame de entrada.
+      this._civHeldPrev = true;
+      this._civHeldArmed = false;
       this._stats.landings++;
       document.body.classList.add('civ-mode');
       if (this.hud) this.hud.hide();
       if (this.mobile) this.mobile.setVisible(false);
       if (this.input) { this.input.releaseAll(); this.input.exitPointerLock(); this.input.flushEvents(); }
-      this._civHeldPrev = true;   // la tecla sigue pulsada: no salir al instante
+      // La entrada se ha liberado arriba; se conserva solo como estado de
+      // transición para esperar a que el jugador suelte el botón real.
       if (this.civUI) { this.civUI.clearLog(); this.civUI.show(); }
       const theme = this.civ.colony ? this.civ.colony.theme : null;
       this.hud?.alert(`${planet.config.emoji} Colonizando ${planet.config.name}: ${theme ? theme.demonym : 'nueva colonia'}`, 'info', 4000);
@@ -1164,6 +1195,7 @@ export class Game {
       this.isCivMode = false;
       this._landHold = 0;
       this._civHeldPrev = false;
+      this._civHeldArmed = false;
       document.body.classList.remove('civ-mode');
       if (this.civUI) this.civUI.hide();
       if (this.hud && this.isPlaying) this.hud.show();
@@ -1227,6 +1259,7 @@ export class Game {
     audio.play('deposit');
   }
 
+
   // ------------------------------------------------------------- Guardado
 
   /** Estado completo de la partida (JSON puro, sin referencias a three.js). */
@@ -1246,7 +1279,6 @@ export class Game {
       playTime: this.playTime,
       credits: w.credits,
       planetsColonized: colonized,
-      colonies: this.civ ? this.civ.colonies.size : 0,
       savedInCiv: this.isCivMode && this.civ && this.civ.planet ? this.civ.planet.config.id : null,
       walle: {
         position: w.position.toArray(),
@@ -1314,22 +1346,35 @@ export class Game {
       if (this.civilization && state.civilization) {
         const c = this.civilization;
         for (const k of Object.keys(c.inventory)) c.inventory[k] = Number(state.civilization.inventory?.[k]) || 0;
+        // Los saves antiguos llamaban `built` a las cúpulas orbitales. Se
+        // reutiliza el registro como permisos de acceso, pero nunca se vuelve
+        // a crear el mesh semicircular.
         c.built = {};
         c.totalBuilt = 0;
-        this.solarSystem?.planets.forEach(p => { try { p.clearCivilization(); } catch (e) { /* noop */ } });
-        const built = state.civilization.built || {};
+        const built = state.civilization.built || state.civilization.unlocked || {};
         for (const planetId of Object.keys(built)) {
-          const planet = this.solarSystem && this.solarSystem.getPlanetById(planetId);
-          const times = Math.max(0, built[planetId] | 0);
-          if (!planet) continue;
-          for (let i = 0; i < times; i++) planet.addCivilizationStructure('dome', this.scene);
-          c.built[planetId] = times;
-          c.totalBuilt += times;
+          if (!this.solarSystem?.getPlanetById(planetId)) continue;
+          if (!built[planetId]) continue;
+          c.built[planetId] = 1;
+          c.totalBuilt++;
         }
         c.notify();
       }
 
-      if (this.civ) this.civ.loadColonies(state.colonies || {});
+      if (this.civ) {
+        this.civ.loadColonies(state.colonies || {});
+        // Una colonia guardada también implica acceso, incluso si procede de
+        // una partida de transición que todavía no tenía el registro orbital.
+        if (this.civilization) {
+          for (const planetId of this.civ.colonies.keys()) {
+            if (!this.civilization.built[planetId]) {
+              this.civilization.built[planetId] = 1;
+              this.civilization.totalBuilt++;
+            }
+          }
+          this.civilization.notify();
+        }
+      }
 
       if (this.refinery && Array.isArray(state.refinery)) {
         state.refinery.forEach((st, i) => {

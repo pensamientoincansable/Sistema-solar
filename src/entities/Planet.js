@@ -169,10 +169,9 @@ export class Planet {
       ? config.initialAngle
       : (config.distance * 0.37) % (Math.PI * 2);
 
-    // Datos gameplay
-    this.civilizationLevel = 0;
+    // Datos gameplay: las colonias se gestionan exclusivamente en CivMode,
+    // nunca como estructuras orbitales anexadas a este grupo.
     this.trashCollected = 0;
-    this.builtStructures = [];
 
     // Punto de interés para refinería
     this.refineryPosition = new THREE.Vector3(config.distance + config.radius + 8, 0, 0);
@@ -211,48 +210,4 @@ export class Planet {
     return target.copy(this.worldPosition);
   }
 
-  /** Elimina las estructuras de civilización construidas (nueva misión). */
-  clearCivilization() {
-    for (const m of this.builtStructures) {
-      try {
-        this.group.remove(m);
-        m.geometry.dispose();
-        m.material.dispose();
-      } catch (e) { /* noop */ }
-    }
-    this.builtStructures = [];
-    this.civilizationLevel = 0;
-  }
-
-  addCivilizationStructure(type, scene) {
-    try {
-      const geo = type === 'dome'
-        ? new THREE.SphereGeometry(1.2, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2)
-        : new THREE.BoxGeometry(1.5, 2, 1.5);
-      const mat = new THREE.MeshStandardMaterial({
-        color: this.config.color,
-        emissive: this.config.color,
-        emissiveIntensity: 0.2,
-        roughness: 0.5,
-        metalness: 0.6
-      });
-      const mesh = new THREE.Mesh(geo, mat);
-      const angle = Math.random() * Math.PI * 2;
-      const r = this.config.radius + 0.6 + Math.random() * 0.8;
-      mesh.position.set(
-        Math.cos(angle) * r,
-        (Math.random() - 0.5) * r * 0.5,
-        Math.sin(angle) * r
-      );
-      mesh.lookAt(0, 0, 0);
-      mesh.castShadow = false;
-      this.group.add(mesh);
-      this.builtStructures.push(mesh);
-      this.civilizationLevel++;
-      return mesh;
-    } catch (e) {
-      console.error('[Planet] addCivilizationStructure error:', e);
-      return null;
-    }
-  }
 }

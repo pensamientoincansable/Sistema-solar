@@ -58,7 +58,7 @@ export class HoloMenu {
       else this.game.hud?.notify('Para salir, cierra la pestaña del navegador', 'info');
     });
 
-    // Construir civilización
+    // Desbloquear acceso a la superficie (no crea meshes orbitales)
     $('btn-build')?.addEventListener('click', () => {
       const sel = $('build-planet-select');
       if (!sel || !this.game.civilization) return;
@@ -68,8 +68,10 @@ export class HoloMenu {
         const planet = PLANETS_CONFIG.find(p => p.id === id);
         const name = planet ? planet.name : id;
         if (result.can) {
-          this.game.hud?.notify(`¡${planet?.civilization.name || 'Civilización'} construida en ${name}! Bonus: ${result.bonus}`, 'success');
+          this.game.hud?.notify(`✅ Acceso a la superficie de ${name} desbloqueado. Mantén G cerca del planeta para entrar.`, 'success');
           this.updateMaterials();
+        } else if (result.unlocked) {
+          this.game.hud?.notify(`✅ ${name} ya tiene el acceso desbloqueado. Mantén G cerca del planeta para entrar.`, 'info');
         } else if (result.missing) {
           const m = MATERIALS[result.missing] || { name: result.missing, icon: '' };
           this.game.hud?.notify(`Faltan materiales para ${name}: ${m.icon} ${m.name} ${result.have}/${result.need}`, 'danger');
@@ -81,7 +83,14 @@ export class HoloMenu {
       }
     });
     const buildSelect = $('build-planet-select');
-    if (buildSelect) buildSelect.innerHTML = PLANETS_CONFIG.map(p => `<option value="${p.id}">${p.emoji} ${p.name}</option>`).join('');
+    if (buildSelect) {
+      buildSelect.innerHTML = PLANETS_CONFIG.map(p => `<option value="${p.id}">${p.emoji} ${p.name}</option>`).join('');
+      buildSelect.addEventListener('change', () => {
+        const planet = PLANETS_CONFIG.find(p => p.id === buildSelect.value);
+        if (planet) this.showPlanetInfo(planet);
+        this.updateMaterials();
+      });
+    }
 
     this._bindSaveSection();
     this._bindSettings();
@@ -274,7 +283,11 @@ export class HoloMenu {
           return `<span class="req ${have >= v ? 'ok' : ''}">${m.icon} ${m.name} ${have}/${v}</span>`;
         }).join('');
       const mats = (planet.trashMaterials || []).map(k => (MATERIALS[k] ? `${MATERIALS[k].icon} ${MATERIALS[k].name}` : k)).join(' · ');
-      const water = planet.id === 'earth' ? '<div><b>Especial:</b> 💧 abundan las gotas de agua a su alrededor</div>'
+      const unlocked = !!(this.game.civilization && this.game.civilization.isUnlocked(planet.id));
+      const access = unlocked
+        ? '<div class="access-status ok"><b>✅ Acceso desbloqueado.</b> Mantén G/🌍 cerca del planeta para jugar la colonia en superficie.</div>'
+        : '<div class="access-status"><b>🔒 Acceso bloqueado.</b> Reúne todos los materiales y pulsa «Desbloquear acceso».</div>';
+      const water = planet.id === 'earth' ? '<div><b>Especial:</b> 💧 gotas de agua útiles, con abundancia moderada</div>'
         : planet.id === 'neptune' ? '<div><b>Especial:</b> 💧 algunas gotas de agua en órbita</div>' : '';
       this.planetInfo.innerHTML = `
         <div class="planet-info-head"><span>${planet.emoji}</span><strong>${planet.name}</strong>
@@ -284,6 +297,7 @@ export class HoloMenu {
           ${water}
           <div><b>Civilización:</b> ${planet.civilization.name} — ${planet.civilization.description}</div>
           <div><b>Bonus:</b> ${planet.civilization.bonus}</div>
+          ${access}
           <div class="reqs">${req}</div>
         </div>`;
       this._lastPlanetInfo = planet;
@@ -303,7 +317,22 @@ export class HoloMenu {
       const progEl = document.getElementById('civilization-progress');
       const colonies = this.game.civ ? this.game.civ.colonies.size : 0;
       if (progEl) {
-        progEl.textContent = `${prog.colonized}/${prog.totalPlanets} orbitales (${prog.percent}%) · ${colonies} colonia${colonies === 1 ? '' : 's'} en superficie · ${prog.totalBuilt} cúpulas`;
+        progEl.textContent = `${prog.colonized}/${prog.totalPlanets} accesos (${prog.percent}%) · ${colonies} colonia${colonies === 1 ? '' : 's'} en superficie`;
+      }
+      const select = document.getElementById('build-planet-select');
+      const button = document.getElementById('btn-build');
+      if (select && this.game.civilization) {
+        for (const option of select.options) {
+          const check = this.game.civilization.canBuild(option.value);
+          const planet = PLANETS_CONFIG.find(item => item.id === option.value);
+          const unlocked = !!(check.unlocked || this.game.civilization.isUnlocked(option.value));
+          option.textContent = `${planet?.emoji || ''} ${planet?.name || option.value}${unlocked ? ' · ✅ acceso' : check.can ? ' · ✓ listo' : ''}`;
+        }
+        const selected = this.game.civilization.canBuild(select.value);
+        if (button) {
+          button.textContent = selected.unlocked ? 'Acceso desbloqueado' : 'Desbloquear acceso';
+          button.disabled = !!selected.unlocked;
+        }
       }
       if (this._lastPlanetInfo) this.showPlanetInfo(this._lastPlanetInfo);
     } catch (e) {

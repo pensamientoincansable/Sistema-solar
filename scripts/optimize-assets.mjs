@@ -21,7 +21,7 @@
  *       @gltf-transform/functions@4 sharp meshoptimizer
  *   node scripts/optimize-assets.mjs
  */
-import { NodeIO } from '@gltf-transform/core';
+import { Document, NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { dedup, prune, simplify, textureCompress, weld } from '@gltf-transform/functions';
 import { MeshoptSimplifier } from 'meshoptimizer';
@@ -152,8 +152,123 @@ async function planetTextures() {
   }
 }
 
-// Uso: node scripts/optimize-assets.mjs [asteroids|water|ufo|taxi|planets ...]
-const STEPS = { asteroids, water: waterDrop, ufo, taxi, planets: planetTextures };
+/**
+ * Genera una esfera metálica pequeña si el master descargado no trae su .bin.
+ * El glTF de `assets/esferas metal` referencia IridescenceMetallicSpheres.bin,
+ * pero ese binario no forma parte del repositorio. No dejamos que un asset roto
+ * rompa el build: la geometría equivalente se genera de forma determinista y
+ * sigue pasando por el mismo pipeline GLB ligero.
+ */
+function makeMetalFallback() {
+  const doc = new Document();
+  const buffer = doc.createBuffer();
+  const segments = 16;
+  const rings = 8;
+  const positions = [];
+  const normals = [];
+  const indices = [];
+  for (let y = 0; y <= rings; y++) {
+    const v = y / rings;
+    const phi = v * Math.PI;
+    const sinPhi = Math.sin(phi);
+    const cosPhi = Math.cos(phi);
+    for (let x = 0; x <= segments; x++) {
+      const u = x / segments;
+      const theta = u * Math.PI * 2;
+      const nx = sinPhi * Math.cos(theta);
+      const ny = cosPhi;
+      const nz = sinPhi * Math.sin(theta);
+      positions.push(nx, ny, nz);
+      normals.push(nx, ny, nz);
+    }
+  }
+  for (let y = 0; y < rings; y++) {
+    for (let x = 0; x < segments; x++) {
+      const a = y * (segments + 1) + x;
+      const b = a + segments + 1;
+      indices.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  }
+  const position = doc.createAccessor('POSITION').setType('VEC3').setArray(new Float32Array(positions)).setBuffer(buffer);
+  const normal = doc.createAccessor('NORMAL').setType('VEC3').setArray(new Float32Array(normals)).setBuffer(buffer);
+  const index = doc.createAccessor('INDICES').setType('SCALAR').setArray(new Uint16Array(indices)).setBuffer(buffer);
+  const material = doc.createMaterial('Metal resource')
+    .setBaseColorFactor([0.42, 0.47, 0.55, 1])
+    .setMetallicFactor(0.9)
+    .setRoughnessFactor(0.2);
+  const primitive = doc.createPrimitive()
+    .setAttribute('POSITION', position)
+    .setAttribute('NORMAL', normal)
+    .setIndices(index)
+    .setMaterial(material);
+  const mesh = doc.createMesh('Metal sphere').addPrimitive(primitive);
+  const node = doc.createNode('Metal sphere').setMesh(mesh);
+  doc.createScene('Scene').addChild(node);
+  return doc;
+}
+
+const RESOURCE_ASSETS = {
+  metal: {
+    source: path.join(SRC, 'esferas metal', 'IridescenceMetallicSpheres.gltf'),
+    output: 'metal_sphere.glb',
+    fallback: true,
+    extensions: ['KHR_materials_iridescence'],
+    simplifyRatio: 0.22,
+  },
+  glass: {
+    source: path.join(SRC, 'glass_sphere', 'scene.gltf'),
+    output: 'glass_sphere.glb',
+    extensions: ['KHR_materials_pbrSpecularGlossiness'],
+    simplifyRatio: 0.18,
+  },
+  polymer: {
+    source: path.join(SRC, 'polímero', 'scene.gltf'),
+    output: 'polymer.glb',
+    simplifyRatio: 0.2,
+  },
+  bio: {
+    source: path.join(SRC, 'musgo', 'scene.gltf'),
+    output: 'moss.glb',
+    simplifyRatio: 0.45,
+  },
+};
+
+async function resourceAssets() {
+  console.log('recursos recolectables (metal, vidrio, polímero y biomasa)');
+  for (const [kind, rule] of Object.entries(RESOURCE_ASSETS)) {
+    let doc;
+    try {
+      doc = await io.read(rule.source);
+    } catch (error) {
+      if (!rule.fallback) throw error;
+      console.warn(`  ! ${kind}: falta el binario del master; se genera una esfera optimizada de respaldo`);
+      doc = makeMetalFallback();
+    }
+    for (const extension of rule.extensions || []) removeExtension(doc, extension);
+    stripAttributes(doc, ['TANGENT']);
+    for (const material of doc.getRoot().listMaterials()) {
+      if (kind === 'glass') {
+        material.setBaseColorFactor([0.35, 0.82, 1.0, 0.42]);
+        material.setAlphaMode('BLEND');
+        material.setMetallicFactor(0.05);
+        material.setRoughnessFactor(0.08);
+      } else if (kind === 'metal') {
+        material.setMetallicFactor(0.82);
+        material.setRoughnessFactor(0.24);
+      }
+    }
+    if (kind === 'bio') {
+      await compressTextures(doc, [{ slots: /baseColor/, size: 256, quality: 78 }, { slots: /metallicRoughness|normal/, size: 256, quality: 76 }]);
+    }
+    await doc.transform(weld(), simplify({ simplifier: MeshoptSimplifier, ratio: rule.simplifyRatio, error: 0.02 }));
+    await finish(doc, rule.output);
+  }
+}
+
+// Uso: node scripts/optimize-assets.mjs [asteroids|water|ufo|taxi|planets|resources ...]
+const STEPS = {
+  asteroids, water: waterDrop, ufo, taxi, planets: planetTextures, resources: resourceAssets,
+};
 const wanted = process.argv.slice(2).filter(a => STEPS[a]);
 await mkdir(OUT, { recursive: true });
 for (const [name, fn] of Object.entries(STEPS)) {

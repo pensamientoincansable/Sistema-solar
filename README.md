@@ -1,6 +1,6 @@
 # WALL·E • Sistema Solar - Recolector Galáctico 🛰️🌌
 
-> **Proyecto recogida de basura espacial** - Videojuego web 3D optimizado para Móvil, PC y TV con menú holográfico, WALL·E como protagonista, sistema solar completo y construcción de civilizaciones.
+> **Proyecto recogida de basura espacial** - Videojuego web 3D optimizado para Móvil, PC y TV con menú holográfico, WALL·E como protagonista, sistema solar completo y desbloqueo de accesos y colonias de superficie.
 
 ![WALL·E](https://img.shields.io/badge/WALL·E-CC--BY--4.0-yellow) ![Three.js](https://img.shields.io/badge/Three.js-0.160-black) ![Vite](https://img.shields.io/badge/Vite-5.4-646cff) ![License](https://img.shields.io/badge/License-MIT-green)
 
@@ -45,7 +45,7 @@ resto ≥ 58 px) y en **Ajustes** se puede cambiar su tamaño (85–140 %), la *
 WASD mover · Ratón mirar (clic para capturar el puntero) · Q/E subir/bajar · Shift turbo ·
 Clic/F disparar · 1-4 armas · **Rueda del ratón: distancia de cámara continua desde la tercera persona
 hasta la primera** · V recorre las 4 distancias · C alterna 1ª/3ª persona · Espacio acción
-(mantener = reparar) · R reparar · T tienda · **G mantén cerca de un planeta = civilizar** ·
+(mantener = reparar) · R reparar · T tienda · **G mantén cerca de un planeta = entrar a una colonia desbloqueada** ·
 **B visión cinemática 360º** (el mismo botón restaura el ángulo) · **H / ⛶ pantalla completa** · Esc/P pausa.
 
 ### 🎮 Mando / TV
@@ -66,17 +66,26 @@ Y distancias de cámara · Back tienda · D-pad ▲▼ subir/bajar · L3 cinemá
 
 ### Recolección, agua y refinado
 - 10 tipos de basura. Cada planeta genera los materiales que necesita su civilización.
-- **💧 Agua** (modelo `assets/drop_of_water`): gotas que abundan alrededor de la **Tierra** (y algunas en
-  Neptuno). Es el único origen de agua, necesaria para Neo-Terra y Abismo Azul.
+- **💧 Agua** (modelo `assets/drop_of_water`): gotas en cantidad moderada alrededor de la **Tierra** (y algunas en
+  Neptuno). Se depositan en refinerías y ayudan a desbloquear Neo-Terra y Abismo Azul.
 - Imán de recolección: la basura y las gotas cercanas vuelan hacia WALL·E.
 - Refinerías orbitales: depositar da materiales + **créditos (CR)**.
+
+### 🌍 Accesos y colonias de superficie
+- El menú **Civilizaciones** muestra los requisitos por planeta. Cuando el inventario tiene todos los materiales,
+  **Desbloquear acceso** los consume y habilita el aterrizaje; no crea ninguna cúpula ni estructura junto al planeta.
+- Vuela bajo y mantén **G / 🌍** para entrar en CivMode: ahí se monta la colonia jugable con terreno, edificios,
+  ciudadanos y economía. G o Esc vuelve al espacio; la colonia continúa produciendo.
+- La biomasa tiene una probabilidad mayor cerca de la Tierra para que el primer acceso no dependa de una búsqueda
+  frustrante.
 
 ### ☄️ Lluvias de asteroides (modelo `assets/asteroides`)
 - Cada 70–110 s (la primera a los ~55 s) una oleada se dirige contra una refinería, avisada con banner,
   marcador en pantalla y minimapa.
 - Los impactos dañan la refinería; a 0 % queda **FUERA DE SERVICIO** (no admite depósitos) hasta que
   WALL·E la **repara** manteniendo el botón de acción a su lado.
-- Destruirlos da créditos y fragmentos de roca; los grandes se parten en dos. Defender sin impactos: +40 CR.
+- Destruirlos da créditos, fragmentos de roca y tres paquetes agrupados: **x20** del recurso más raro que requiere la
+  refinería atacada, **x10** del planeta más lejano y **x5** del siguiente por distancia. Los grandes se parten en dos. Defender sin impactos: +40 CR.
 
 ### 🛸 OVNIs (modelo `assets/nave_espacial_ufo`)
 - Sustituyen a los antiguos enemigos: **Dron OVNI**, **OVNI pirata** y **Nave nodriza** (distinto tamaño,
@@ -125,7 +134,8 @@ Y distancias de cámara · Back tienda · D-pad ▲▼ subir/bajar · L3 cinemá
 ```bash
 npm i --no-save @gltf-transform/core@4 @gltf-transform/extensions@4 @gltf-transform/functions@4 sharp meshoptimizer
 node scripts/optimize-assets.mjs            # todo
-node scripts/optimize-assets.mjs water ufo  # solo algunos (asteroids|water|ufo|taxi|planets)
+node scripts/optimize-assets.mjs resources   # metal, vidrio, polímero y musgo
+node scripts/optimize-assets.mjs water ufo  # solo algunos (asteroids|water|ufo|taxi|planets|resources)
 ```
 
 ## 🗂️ Estructura
@@ -133,7 +143,7 @@ node scripts/optimize-assets.mjs water ufo  # solo algunos (asteroids|water|ufo|
 assets/                  modelos originales (masters CC-BY-4.0 con license.txt)
 public/                  estáticos copiados a dist/
   scene.gltf, scene.bin  WALL·E
-  models/                asteroides, gota, OVNI y taxi optimizados (GLB)
+  models/                asteroides, gota, OVNI, taxi y recursos recolectables optimizados (GLB)
   textures/ (+ lowres/)  planetas, sol, luna, anillos
 scripts/optimize-assets.mjs
 tests/                   pruebas de colonia, guardado, cámara, HUD (npm test)
