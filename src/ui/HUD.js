@@ -245,8 +245,10 @@ export class HUD {
     } else {
       // Pegado al borde, con flecha hacia el objetivo
       angle = Math.atan2(-y, x);
-      // Rectángulo útil: deja libres el panel de estado y el minimapa (arriba)
-      // y, en táctil, los botones ▲▼ (izquierda) y el grupo de acción (derecha).
+      // Rectángulo útil: deja libres el panel de estado, los botones del
+      // HUD (arriba, a la izquierda en PC y centrados en táctil) y el
+      // minimapa; y en táctil los botones ▲▼ (izquierda) y el grupo de
+      // acción (derecha).
       const left = this.touch ? 110 : 46;
       const right = W - (this.touch ? 120 : 46);
       const top = this.touch ? 128 : 150;

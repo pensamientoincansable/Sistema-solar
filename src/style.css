@@ -903,8 +903,49 @@ body:not(.touch-ui) .context-prompt { bottom: 76px; }
 
 /* ================================================== NUEVOS BOTONES DEL HUD */
 .hud-buttons { flex-wrap: wrap; justify-content: flex-end; max-width: 240px; }
-body.touch-ui .hud-buttons { max-width: 112px; }
-body.touch-ui .hud-topright { flex-direction: column; align-items: flex-end; }
+
+/* Móvil/tablet táctil en juego: los botones pasan al centro de la parte
+   superior (y algo más pequeños para que quepan en una sola fila) y el
+   radar queda solo en la esquina superior derecha, semitransparente. */
+body.touch-ui .hud-topright {
+  left: 0;
+  right: 0;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 0 calc(12px + var(--safe-r)) 0 calc(12px + var(--safe-l));
+}
+body.touch-ui .hud-buttons {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: none;
+  flex-wrap: nowrap;
+  justify-content: center;
+  gap: 6px;
+}
+body.touch-ui .hud-btn { width: 44px; height: 44px; }
+body.touch-ui .hud-btn .mob-icon svg { width: 22px; height: 22px; }
+body.touch-ui .mini-map { opacity: 0.6; }
+/* Objetivo y notificaciones por debajo de la fila de botones */
+body.touch-ui .hud-topcenter { top: calc(62px + var(--safe-t)); width: min(40vw, 520px); }
+body.touch-ui #notifications { top: calc(96px + var(--safe-t)); }
+
+/* Pantallas estrechas: mismos offsets apilados que el resto del HUD */
+@media (max-width: 700px) {
+  body.touch-ui .hud-topcenter { top: calc(120px + var(--safe-t)); width: 86vw; }
+  body.touch-ui #notifications { top: calc(170px + var(--safe-t)); }
+}
+/* Móvil en vertical: los botones centrados no caben en una fila junto al
+   radar, así que van en 2×2 y el panel de estado baja por debajo */
+@media (max-width: 700px) and (orientation: portrait) {
+  body.touch-ui .hud-buttons { max-width: 104px; flex-wrap: wrap; }
+  body.touch-ui .hud-status { top: calc(114px + var(--safe-t)); }
+  body.touch-ui .hud-topcenter { top: calc(206px + var(--safe-t)); }
+  body.touch-ui #notifications { top: calc(252px + var(--safe-t)); }
+}
+
 .btn-key {
   position: absolute;
   bottom: 2px; right: 4px;
