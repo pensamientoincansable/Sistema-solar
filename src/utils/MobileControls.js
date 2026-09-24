@@ -27,6 +27,9 @@ export const ICONS = {
   deposit: '<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 20l16-9 16 9v16l-16 9-16-9z" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linejoin="round"/><path d="M24 4v16m-6-6l6 6 6-6" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   repair: '<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M30 6a10 10 0 00-9 14L7 34a4 4 0 006 6l14-14a10 10 0 0013-12l-6 6-6-2-2-6z" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linejoin="round"/></svg>',
   shop: '<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M5 8h6l5 22h22l5-15H14" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="19" cy="38" r="3.5" fill="currentColor"/><circle cx="35" cy="38" r="3.5" fill="currentColor"/></svg>',
+  cinematic: '<svg viewBox="0 0 48 48" aria-hidden="true"><rect x="4" y="12" width="40" height="24" rx="3" fill="none" stroke="currentColor" stroke-width="3.2"/><path d="M4 20h40M14 12v8M24 12v8M34 12v8" stroke="currentColor" stroke-width="2.6" opacity=".75"/></svg>',
+  fullscreen: '<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 18V8h10M40 18V8H30M8 30v10h10M40 30v10H30" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  civilize: '<svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="16" fill="none" stroke="currentColor" stroke-width="3.2"/><path d="M8 24h32M24 8c5 5 5 27 0 32M24 8c-5 5-5 27 0 32" fill="none" stroke="currentColor" stroke-width="2.6" opacity=".8"/></svg>',
   hand: '<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M16 26V11a3 3 0 016 0v11-15a3 3 0 016 0v15-12a3 3 0 016 0v14-8a3 3 0 016 0v13c0 9-6 16-15 16h-2c-5 0-8-2-11-6l-7-9a3 3 0 015-4z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/></svg>',
 };
 
@@ -155,6 +158,17 @@ export class MobileControls {
         break;
       case 'pause':
         if (pressed) this.input.requestPause();
+        break;
+      case 'cinematic':
+        // Mismo botón para activar y desactivar la visión cinemática
+        if (pressed) this.input.requestCinematic();
+        break;
+      case 'fullscreen':
+        if (pressed) this.input.requestFullscreen();
+        break;
+      case 'civilize':
+        // Se MANTIENE pulsado para aterrizar / volver a volar
+        t.civilize = pressed;
         break;
       default: break;
     }

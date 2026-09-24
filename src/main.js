@@ -139,14 +139,16 @@ try {
       // Mensaje bienvenida consola
       console.log(
         `%c WALL·E SISTEMA SOLAR %c
-Misión: Recolecta basura espacial y agua, defiende las refinerías y construye civilizaciones
+Misión: Recolecta basura espacial y agua, defiende las refinerías y civiliza los planetas
 Controles PC:
   WASD -> Mover · Ratón -> Mirar · Q / E -> Subir / Bajar · Shift -> Turbo
   Clic / F -> Disparar · 1-4 -> Armas
   Rueda -> Distancia de cámara (3ª a 1ª persona) · V -> 4 distancias · C -> 1ª/3ª persona
   ESPACIO -> Acción (depositar / tienda; mantener = reparar) · R -> Reparar · T -> Tienda
+  G -> Mantén cerca de un planeta para aterrizar y civilizar (otra vez = despegar)
+  B -> Visión cinemática 360º (mismo botón restaura el ángulo) · H -> Pantalla completa
   ESC / P -> Pausa
-Móvil: joysticks dinámicos (izquierda mover, derecha cámara) + botones
+Móvil: joysticks dinámicos (izquierda mover, derecha cámara) + botones 🌍 🎬
 `,
         'background:#00f0ff;color:#000;padding:6px 12px;font-weight:bold;font-family:Orbitron;',
         'color:#e0f7ff;font-family:monospace;'

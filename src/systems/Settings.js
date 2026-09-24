@@ -13,6 +13,7 @@ export const DEFAULT_SETTINGS = {
   cameraStart: 'third',   // 'third' | 'first'
   quality: 0,             // 0 auto, 1 baja, 2 media, 3 alta, 4 ultra
   volume: 70,             // 0 – 100
+  autosave: true,         // autoguardado de la partida en el navegador
   tutorialDone: false,
 };
 

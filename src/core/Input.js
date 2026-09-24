@@ -14,6 +14,8 @@ import { isTouchUI } from '../utils/device.js';
  *   lookDeltaX, lookDeltaY  giro instantáneo del ratón (rad) acumulado en el frame
  *   boost, shooting         bool
  *   actionHeld              bool   (ESPACIO / R / botón de acción / A): mantener = reparar
+ *   civilizeHeld            bool   (G / botón 🌍): MANTENER cerca de un planeta
+ *                                  entra en el modo civilizar; mantener de nuevo sale
  * Convención (sin inversión): lookX > 0 gira a la derecha, lookY > 0 mira hacia abajo
  * (igual que arrastrar el dedo o mover el ratón hacia abajo).
  *
@@ -30,7 +32,7 @@ export class InputSystem {
     this._mouseDX = 0;
     this._mouseDY = 0;
     this.baseMouseSensitivity = 0.0025; // rad por píxel (x Ajustes)
-    this.touch = { moveX: 0, moveY: 0, lookX: 0, lookY: 0, shoot: false, boost: false, action: false, up: false, down: false };
+    this.touch = { moveX: 0, moveY: 0, lookX: 0, lookY: 0, shoot: false, boost: false, action: false, up: false, down: false, civilize: false };
     this.gamepadIndex = null;
     this.enabled = true;
 
@@ -46,6 +48,7 @@ export class InputSystem {
     this.boost = false;
     this.shooting = false;
     this.actionHeld = false;
+    this.civilizeHeld = false;
     this.lastDevice = isTouchUI() ? 'touch' : 'keyboard';
 
     // Eventos puntuales
@@ -56,6 +59,8 @@ export class InputSystem {
     this._pause = false;
     this._actionLatch = false;
     this._shopLatch = false;
+    this._cinematicToggle = false;
+    this._fullscreenToggle = false;
     this._shootLatch = false;   // garantiza al menos un frame de disparo por click/tap
     this._prevGamepadButtons = {};
     this._ignoreMouseEvents = 0;
@@ -80,7 +85,7 @@ export class InputSystem {
       this.keys[code] = true;
       this.lastDevice = 'keyboard';
 
-      if (['Space', 'KeyF', 'KeyC', 'KeyV', 'KeyT', 'KeyR', 'Digit1', 'Digit2', 'Digit3', 'Digit4',
+      if (['Space', 'KeyF', 'KeyC', 'KeyV', 'KeyT', 'KeyR', 'KeyB', 'KeyH', 'KeyG', 'Digit1', 'Digit2', 'Digit3', 'Digit4',
         'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
         e.preventDefault();
       }
@@ -92,6 +97,8 @@ export class InputSystem {
         case 'KeyC': this._cameraToggle = true; break;
         case 'KeyV': this._zoomCycle = true; break;
         case 'KeyT': this._shopLatch = true; break;
+        case 'KeyB': this._cinematicToggle = true; break;      // visión cinemática (360º)
+        case 'KeyH': this._fullscreenToggle = true; break;     // pantalla completa
         case 'Digit1': case 'Numpad1': this._weaponSwitch = 1; break;
         case 'Digit2': case 'Numpad2': this._weaponSwitch = 2; break;
         case 'Digit3': case 'Numpad3': this._weaponSwitch = 3; break;
@@ -183,7 +190,7 @@ export class InputSystem {
     this.mouse.right = false;
     const t = this.touch;
     t.moveX = t.moveY = t.lookX = t.lookY = 0;
-    t.shoot = t.boost = t.action = t.up = t.down = false;
+    t.shoot = t.boost = t.action = t.up = t.down = t.civilize = false;
     this._mouseDX = 0;
     this._mouseDY = 0;
     this._shootLatch = false;
@@ -212,6 +219,8 @@ export class InputSystem {
   requestPause() { this._pause = true; }
   requestAction() { this._actionLatch = true; }
   requestShop() { this._shopLatch = true; }
+  requestCinematic() { this._cinematicToggle = true; }
+  requestFullscreen() { this._fullscreenToggle = true; }
   requestShot() { this._shootLatch = true; }
 
   update() {
@@ -229,6 +238,7 @@ export class InputSystem {
     let down = !!k['keye'];
     let boost = !!shift;
     let action = !!(k['space'] || k['keyr']);
+    let civilize = !!k['keyg'];
     let shooting = !!(this.mouse.left || k['keyf']);
     let lookX = 0;
     let lookY = 0;
@@ -248,6 +258,7 @@ export class InputSystem {
     shooting = shooting || t.shoot;
     up = up || t.up;
     down = down || t.down;
+    civilize = civilize || t.civilize;
 
     // --- Gamepad ---
     const gp = this._getGamepad();
@@ -279,8 +290,10 @@ export class InputSystem {
       if (btn(9) && !prev[9]) this._pause = true;             // Start
       if (btn(4) && !prev[4]) this._weaponSwitch = 'next';    // LB
       if (btn(8) && !prev[8]) this._shopLatch = true;         // Back/Select: tienda
+      if (btn(10) && !prev[10]) this._cinematicToggle = true; // L3: visión cinemática
+      civilize = civilize || btn(11);                         // R3: modo civilizar
       if (gpAction && !prev.action) this._actionLatch = true;
-      this._prevGamepadButtons = { 3: btn(3), 9: btn(9), 4: btn(4), 8: btn(8), action: gpAction };
+      this._prevGamepadButtons = { 3: btn(3), 9: btn(9), 4: btn(4), 8: btn(8), 10: btn(10), action: gpAction };
     }
 
     // --- Ratón (delta acumulado desde el último frame) ---
@@ -300,6 +313,7 @@ export class InputSystem {
     this.shooting = shooting || this._shootLatch;
     this._shootLatch = false;
     this.actionHeld = action;
+    this.civilizeHeld = civilize;
   }
 
   _getGamepad() {
@@ -319,10 +333,13 @@ export class InputSystem {
   consumeActionPress() { const v = this._actionLatch; this._actionLatch = false; return v; }
   consumeShopRequest() { const v = this._shopLatch; this._shopLatch = false; return v; }
   consumePause() { const v = this._pause; this._pause = false; return v; }
+  consumeCinematicToggle() { const v = this._cinematicToggle; this._cinematicToggle = false; return v; }
+  consumeFullscreenToggle() { const v = this._fullscreenToggle; this._fullscreenToggle = false; return v; }
 
   /** Descarta eventos pendientes (al reanudar tras menú/tienda). */
   flushEvents() {
     this._cameraToggle = this._zoomCycle = this._actionLatch = this._shopLatch = this._pause = false;
+    this._cinematicToggle = this._fullscreenToggle = false;
     this._zoomDelta = 0;
     this._weaponSwitch = 0;
     this._shootLatch = false;

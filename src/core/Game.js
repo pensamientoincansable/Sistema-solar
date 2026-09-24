@@ -6,6 +6,9 @@ import { TrashSystem } from '../entities/Trash.js';
 import { EnemySystem } from '../entities/Enemy.js';
 import { Refinery } from '../entities/Refinery.js';
 import { CivilizationManager } from '../entities/Civilization.js';
+import { CivMode } from '../civ/CivMode.js';
+import { CivUI } from '../ui/CivUI.js';
+import { SaveSystem } from '../systems/SaveSystem.js';
 import { WaterSystem } from '../entities/WaterSystem.js';
 import { AsteroidSystem } from '../entities/AsteroidSystem.js';
 import { TaxiVendor } from '../entities/TaxiVendor.js';
@@ -15,7 +18,7 @@ import { settings } from '../systems/Settings.js';
 import { audio } from '../systems/AudioFX.js';
 import { AdaptiveResolution } from '../utils/AdaptiveResolution.js';
 import { MobileControls } from '../utils/MobileControls.js';
-import { isTouchUI, enterImmersiveMode, vibrate } from '../utils/device.js';
+import { isTouchUI, enterImmersiveMode, vibrate, toggleFullscreen, isFullscreen, canFullscreen } from '../utils/device.js';
 import { preloadAll } from '../utils/ModelLibrary.js';
 import { HUD } from '../ui/HUD.js';
 import { HoloMenu } from '../ui/HoloMenu.js';
@@ -31,6 +34,16 @@ const _aim = new THREE.Vector3();
 const _origin = new THREE.Vector3();
 const _dir = new THREE.Vector3();
 const _near = { station: null, distance: Infinity };
+const _landInfo = { planet: null, distance: Infinity };
+const _qInv = new THREE.Quaternion();
+const _dirW = new THREE.Vector3();
+
+/** Altitud sobre la superficie a la que se puede aterrizar (unidades del mundo). */
+const LAND_ALTITUDE = 22;
+/** Segundos que hay que MANTENER la tecla/botón para entrar en modo civilizar. */
+const LAND_HOLD_TIME = 1.5;
+/** Equivalencias entre los recursos de una colonia y los de la órbita. */
+const CIV_TO_ORBIT = { stone: 'concrete', wood: 'bio' };
 
 /**
  * Game - Orquestador principal del juego.
@@ -60,6 +73,15 @@ export class Game {
     this._context = null;
     this._objTimer = 0;
     this._objective = '';
+    // Modo civilizar / guardado
+    this.isCivMode = false;
+    this._landHold = 0;
+    this._landTarget = null;
+    this._civHeldPrev = false;
+    this._civHeldArmed = false;
+    this.playTime = 0;
+    this._saveTimer = 0;
+    this._stats = { kills: 0, deposited: 0, trashCollected: 0, landings: 0 };
 
     this._sys = {};
 
@@ -118,6 +140,33 @@ export class Game {
       }
     });
     this._try('civ', () => { if (this.solarSystem) this.civilization = new CivilizationManager(this.solarSystem); });
+    this._try('civ3d', () => {
+      this.civ = new CivMode(this.scene, this.renderer, {});
+      this.civ.onEvent = (kind) => {
+        if (kind === 'built') audio.play('buy');
+      };
+    });
+    this._try('civui', () => {
+      this.civUI = new CivUI(this.civ, {
+        onExit: () => this.exitCivMode(),
+        onNotify: (msg, type) => this.hud?.notify(msg, type || 'info'),
+        onExport: (r) => this._onColonyExport(r),
+      });
+    });
+    this._try('save', () => {
+      this.save = new SaveSystem({
+        serialize: () => this._serializeState(),
+        apply: (state, meta) => this._applyState(state, meta),
+        onSaved: () => { /* silencioso: el autosave no debe interrumpir */ },
+      });
+      this.save.requireStarted = () => !!this.hasStarted;
+      if (settings.get('autosave') !== false) this.save.startAutosave();
+      settings.onChange((key, value) => {
+        if (key !== 'autosave') return;
+        if (value) this.save.startAutosave();
+        else this.save.stopAutosave();
+      });
+    });
     this._try('hud', () => {
       this.hud = new HUD();
       this.hud.onPause = () => this.pauseGame();
@@ -299,6 +348,10 @@ export class Game {
       if (document.hidden && this.isPlaying) this.pauseGame();
     });
 
+    // El usuario puede salir de pantalla completa con ESC o con el navegador
+    document.addEventListener('fullscreenchange', () => this._syncFullscreenButton());
+    document.addEventListener('webkitfullscreenchange', () => this._syncFullscreenButton());
+
     // Tocar el aviso de "gira el móvil" permite seguir en vertical
     document.getElementById('rotate-hint')?.addEventListener('click', () => document.body.classList.add('portrait-ok'));
 
@@ -321,6 +374,7 @@ export class Game {
     if (this.enemySystem) {
       this.enemySystem.onKilled = (enemy) => {
         const cr = enemy.config.credits || 20;
+        this._stats.kills++;
         this.addCredits(cr);
         audio.play('explosion');
         this._vibrate(35);
@@ -373,6 +427,18 @@ export class Game {
     if (this.walle) this.walle.credits += n;
   }
 
+  /** Planetas con colonia en superficie o estructura orbital. */
+  _colonizedCount() {
+    const ids = new Set();
+    if (this.civilization && this.civilization.built) {
+      for (const id of Object.keys(this.civilization.built)) ids.add(id);
+    }
+    if (this.civ) {
+      for (const id of this.civ.colonies.keys()) ids.add(id);
+    }
+    return ids.size;
+  }
+
   /** Notificación con límite de frecuencia por clave (segundos). */
   notifyOnce(key, message, type = 'info', minGap = 3) {
     const now = performance.now() / 1000;
@@ -423,6 +489,7 @@ export class Game {
         this.menu.setContinueVisible(true);
       }
       if (this.hud) this.hud.show();
+      this._syncFullscreenButton();
       if (this.mobile) this.mobile.setVisible(this.mobile.isMobile);
       if (this.input) {
         this.input.flushEvents();
@@ -484,6 +551,7 @@ export class Game {
   pauseGame() {
     if (!this.isPlaying) return;
     try {
+      if (this.isCivMode) this.exitCivMode();   // la colonia no se pausa: se sale de ella
       if (this.shopOpen) this.closeShop(true);
       this.isPlaying = false;
       this.isPaused = true;
@@ -500,6 +568,7 @@ export class Game {
         this.input.releaseAll();
         this.input.exitPointerLock();
       }
+      if (this.save) this.save.autosave('pausa');
       this._needsRender = true;
     } catch (err) {
       console.error('[Game] pauseGame error:', err);
@@ -524,6 +593,10 @@ export class Game {
       if (this.refinery) this.refinery.reset();
       if (this.combat) this.combat.clear();
       if (this.particles) this.particles.clear();
+      if (this.civ) this.civ.reset();
+      if (this.civUI) { this.civUI.clearLog(); this.civUI.hide(); }
+      this.playTime = 0;
+      this._stats = { kills: 0, deposited: 0, trashCollected: 0, landings: 0 };
       this._won = false;
       this._missionBegun = false;
       this.isPaused = false;
@@ -717,8 +790,32 @@ export class Game {
         if (ref) ref.dist = near.distance;
       }
     }
+    // Aterrizar y civilizar: mantener G / 🌍 junto a un planeta.
+    // Si hay refinería o taxi a tiro, esos tienen prioridad (depositar / reparar / tienda).
+    const land = this._computeLandingContext();
     if (shop && ref) return shop.dist < ref.dist ? shop : ref;
-    return shop || ref;
+    if (shop || ref) return shop || ref;
+    return land;
+  }
+
+  /** Aviso de "mantén para aterrizar" cuando WALL·E vuela bajo sobre un planeta. */
+  _computeLandingContext() {
+    const w = this.walle;
+    if (!this.solarSystem || this.isCivMode) return null;
+    const info = this.solarSystem.getClosestPlanetInfo(w.position, _landInfo);
+    if (!info.planet) return null;
+    const altitude = info.distance - info.planet.config.radius;
+    if (altitude > LAND_ALTITUDE) { this._landHold = 0; this._landTarget = null; return null; }
+    this._landTarget = info.planet;
+    const key = this.touch ? 'MANTÉN 🌍' : 'MANTÉN G';
+    const name = `${info.planet.config.emoji} ${info.planet.config.name}`;
+    return {
+      type: 'land',
+      key,
+      text: `Aterrizar y civilizar ${name} (${Math.round(altitude)} u de altitud)`,
+      progress: Math.min(1, this._landHold / LAND_HOLD_TIME),
+      dist: info.distance,
+    };
   }
 
   handleActions(delta) {
@@ -762,6 +859,8 @@ export class Game {
     const w = this.walle;
     if (!this.refinery || !this.civilization) return;
     const dep = w.deposit();
+    this._stats.deposited += dep.count;
+    this._stats.trashCollected += dep.count;
     const refined = this.refinery.processMaterials(dep.materials, dep.count);
     this.civilization.addMaterials(refined);
     let value = 0;
@@ -789,7 +888,9 @@ export class Game {
     if (w.trashCount >= w.trashCapacity) return '📦 Bodega llena: deposita en una refinería ◆';
     if (a && a.enabled && a.timeToNextWave < 15) return `⚠️ Lluvia de asteroides en ${Math.ceil(a.timeToNextWave)} s`;
     if (w.trashCount >= w.trashCapacity * 0.6) return `Lleva la carga a una refinería ◆ (${w.trashCount}/${w.trashCapacity})`;
-    return 'Recoge basura 🗑 y agua 💧 (abunda cerca de la Tierra)';
+    const land = this._context && this._context.type === 'land' ? this._context : null;
+    if (land) return `🌍 ${land.text.replace(/^Aterrizar y civilizar /, 'Mantén G para civilizar ')}`;
+    return 'Recoge basura 🗑 y agua 💧 · mantén G cerca de un planeta para civilizarlo';
   }
 
   _updateIdleCamera(delta) {
@@ -804,12 +905,27 @@ export class Game {
     const w = this.walle;
     const input = this.input;
 
+    this.playTime += delta;
+    this._handleGlobalToggles(input);
+
+    // En la superficie de un planeta la simulación espacial queda en pausa
+    if (this.isCivMode) { this._updateCiv(delta); return; }
+
+    this._updateLanding(delta);
+    if (this.civ) this.civ.updateColonies(delta);
+
     // Cámara: rueda (PC), botón 👁 / V / Y (4 distancias), C (1ª/3ª)
-    if (input.consumeCameraToggle()) {
+    // En cinemática (o al restaurar el ángulo) se descartan para no perder el original.
+    const cineBusy = w.cinematic.active || w.cinematic.restore > 0;
+    if (cineBusy) {
+      input.consumeCameraToggle();
+      input.consumeZoomCycle();
+      input.consumeZoomDelta();
+    } else if (input.consumeCameraToggle()) {
       w.toggleCameraMode();
       this.hud?.showZoom(w.zoomTarget, w.zoomTarget > 0.5 ? 'Tercera persona' : 'Primera persona');
     }
-    if (input.consumeZoomCycle()) {
+    if (!cineBusy && input.consumeZoomCycle()) {
       const idx = w.cycleZoomPreset();
       this.hud?.showZoom(w.zoomTarget, CAMERA_PRESET_NAMES[idx]);
     }
@@ -899,6 +1015,387 @@ export class Game {
     }
   }
 
+  // ---------------------------------------------------- Visión cinemática
+
+  /** Alterna la visión cinemática (360º). Mismo botón/tecla para activar y desactivar. */
+  toggleCinematic() {
+    const w = this.walle;
+    if (!w) return;
+    if (this.isCivMode) { this.hud?.notify('La visión cinemática es para el vuelo espacial', 'info'); return; }
+    const on = !w.cinematic.active;
+    if (on) {
+      w.startCinematic();
+      document.body.classList.add('cinematic');
+      this.hud?.notify('🎬 Visión cinemática: la cámara gira 360º (pulsa otra vez para salir)', 'info');
+      this.hud?.showZoom(w.zoomTarget, 'Cinemática');
+    } else {
+      w.stopCinematic();
+      document.body.classList.remove('cinematic');
+      this.hud?.notify('🎬 Visión normal restaurada', 'info');
+    }
+    audio.play('ui');
+    this._needsRender = true;
+  }
+
+  /** Botón/tecla de pantalla completa (PC y dispositivos que lo admitan). */
+  async toggleFullscreenUI() {
+    const result = await toggleFullscreen();
+    if (result === null) {
+      this.hud?.notify('Este navegador no permite pantalla completa', 'info');
+      return;
+    }
+    this._syncFullscreenButton();
+    this.hud?.notify(result ? '⛶ Pantalla completa activada' : '⛶ Pantalla completa desactivada', 'info');
+    this._needsRender = true;
+  }
+
+  _syncFullscreenButton() {
+    const btn = document.getElementById('btn-fullscreen');
+    if (!btn) return;
+    if (!canFullscreen()) { btn.style.display = 'none'; return; }
+    const on = isFullscreen();
+    btn.classList.toggle('on', on);
+    btn.title = on ? 'Salir de pantalla completa (H)' : 'Pantalla completa (H)';
+    const icon = btn.querySelector('.fb-icon');
+    if (icon) icon.textContent = on ? '🗗' : '⛶';
+  }
+
+  /** Teclas/botones que valen en cualquier momento del vuelo. */
+  _handleGlobalToggles(input) {
+    if (input.consumeCinematicToggle()) this.toggleCinematic();
+    if (input.consumeFullscreenToggle()) this.toggleFullscreenUI();
+  }
+
+  // --------------------------------------------------------- Modo civilizar
+
+  /** Acumula el tiempo que se mantiene G / 🌍 y aterriza al completarse. */
+  _updateLanding(delta) {
+    const held = !!(this.input && this.input.civilizeHeld);
+    if (held && this._landTarget) {
+      this._landHold += delta;
+      if (this._landHold >= LAND_HOLD_TIME) {
+        const planet = this._landTarget;
+        this._landHold = 0;
+        this.enterCivMode(planet);
+      }
+    } else if (!held) {
+      this._landHold = 0;
+    }
+  }
+
+  /**
+   * Entra en la superficie del planeta: congela la simulación espacial, monta la
+   * colonia y aparca a WALL·E junto al centro.
+   */
+  enterCivMode(planet) {
+    if (!planet || !this.civ || this.isCivMode) return false;
+    const w = this.walle;
+    try {
+      // Normal de aterrizaje en el espacio LOCAL del planeta
+      planet.group.updateMatrixWorld(true);
+      planet.group.getWorldQuaternion(_qInv).invert();
+      _dirW.copy(w.position).sub(planet.getWorldPosition()).normalize().applyQuaternion(_qInv);
+      if (_dirW.lengthSq() < 0.5) _dirW.set(1, 0, 0);
+      this.civ.options.landingNormal = _dirW;
+
+      const ok = this.civ.enter(planet);
+      if (!ok) return false;
+
+      // WALL·E se queda aparcado en la colonia
+      this.scene.remove(w.group);
+      this.civ.root.add(w.group);
+      w.group.position.set(0, 1.4, 10);
+      w.group.quaternion.identity();
+      w.group.updateMatrixWorld(true);
+      w.velocity.set(0, 0, 0);
+      if (w.cinematic.active) { w.stopCinematic(); document.body.classList.remove('cinematic'); }
+
+      this.isCivMode = true;
+      this._landHold = 0;
+      this._stats.landings++;
+      document.body.classList.add('civ-mode');
+      if (this.hud) this.hud.hide();
+      if (this.mobile) this.mobile.setVisible(false);
+      if (this.input) { this.input.releaseAll(); this.input.exitPointerLock(); this.input.flushEvents(); }
+      this._civHeldPrev = true;   // la tecla sigue pulsada: no salir al instante
+      if (this.civUI) { this.civUI.clearLog(); this.civUI.show(); }
+      const theme = this.civ.colony ? this.civ.colony.theme : null;
+      this.hud?.alert(`${planet.config.emoji} Colonizando ${planet.config.name}: ${theme ? theme.demonym : 'nueva colonia'}`, 'info', 4000);
+      audio.play('deposit');
+      this._vibrate([20, 40, 20]);
+      this._needsRender = true;
+      if (this.save) this.save.autosave('aterrizaje');
+      return true;
+    } catch (e) {
+      console.error('[Game] enterCivMode error:', e);
+      this.hud?.notify('No se pudo aterrizar en este planeta', 'danger');
+      return false;
+    }
+  }
+
+  /** Vuelve al espacio con WALL·E y la cámara exactamente donde estaban. */
+  exitCivMode() {
+    if (!this.isCivMode || !this.civ) return false;
+    const w = this.walle;
+    const planet = this.civ.planet;
+    try {
+      // Salida: WALL·E despega perpendicular a la superficie
+      if (planet) {
+        const surface = planet.getWorldPosition(new THREE.Vector3());
+        const out = w.group.position.clone();
+        this.civ.root.updateMatrixWorld(true);
+        this.civ.root.localToWorld(out);
+        const dir = out.sub(surface);
+        if (dir.lengthSq() < 1e-6) dir.set(1, 0, 0);
+        dir.normalize();
+        w.position.copy(surface).addScaledVector(dir, planet.config.radius + 14);
+        w.velocity.set(0, 0, 0);
+        w.rotation.set(0, Math.atan2(dir.x, dir.z), 0);
+        w.quaternion.setFromEuler(w.rotation);
+        w.spawnPoint.copy(w.position);
+      }
+      if (this.civ.root && w.group.parent === this.civ.root) this.civ.root.remove(w.group);
+      this.scene.add(w.group);
+      w.group.position.copy(w.position);
+      w.group.quaternion.copy(w.quaternion);
+      this.civ.exit();
+      w.snapCamera();
+
+      this.isCivMode = false;
+      this._landHold = 0;
+      this._civHeldPrev = false;
+      document.body.classList.remove('civ-mode');
+      if (this.civUI) this.civUI.hide();
+      if (this.hud && this.isPlaying) this.hud.show();
+      if (this.mobile && this.isPlaying) this.mobile.setVisible(this.mobile.isMobile);
+      if (this.input) { this.input.flushEvents(); if (this.isPlaying) this.input.requestPointerLock(); }
+      this.hud?.notify('🛰️ De vuelta al espacio: la colonia sigue produciendo', 'info');
+      audio.play('ui');
+      this._needsRender = true;
+      if (this.save) this.save.autosave('despegue');
+      return true;
+    } catch (e) {
+      console.error('[Game] exitCivMode error:', e);
+      return false;
+    }
+  }
+
+  /** Bucle del modo civilizar. */
+  _updateCiv(delta) {
+    if (!this.civ || !this.civ.active) { this.exitCivMode(); return; }
+    const input = this.input;
+    // G / 🌍 otra vez (flanco de subida) o el botón del panel: a volar
+    const held = !!(input && input.civilizeHeld);
+    if (held && !this._civHeldPrev) this._civHeldArmed = true;
+    if (!held && this._civHeldArmed) {
+      this._civHeldArmed = false;
+      this._civHeldPrev = false;
+      this.exitCivMode();
+      return;
+    }
+    this._civHeldPrev = held;
+
+    this.civ.update(delta, input);
+    this.civ.updateColonies(delta);
+    for (const ev of this.civ.drainEvents()) {
+      if (this.civUI) this.civUI.log(ev.message, ev.type);
+      if (ev.type === 'danger' || ev.type === 'era') this.hud?.notify(ev.message, ev.type === 'era' ? 'success' : 'danger');
+      if (ev.type === 'era') audio.play('restored');
+    }
+    if (this.civUI) this.civUI.refresh(delta);
+    this._needsRender = true;
+  }
+
+  /** Recursos que la colonia envía a la órbita (materiales + créditos). */
+  _onColonyExport(result) {
+    if (!result || !result.ok) {
+      this.hud?.notify((result && result.reason) || 'No se pudo enviar nada', 'danger');
+      return;
+    }
+    // La colonia habla de piedra y madera; la órbita de hormigón y biomasa
+    const sent = {};
+    for (const [res, amount] of Object.entries(result.materials)) {
+      const target = CIV_TO_ORBIT[res] || res;
+      sent[target] = (sent[target] || 0) + amount;
+    }
+    if (this.civilization) this.civilization.addMaterials(sent);
+    const cr = Math.round(result.value * 1.5);
+    this.addCredits(cr);
+    const names = Object.entries(sent)
+      .map(([k, v]) => `${(MATERIALS[k] && MATERIALS[k].icon) || ''}${v}`).join(' ');
+    this.hud?.notify(`🚀 Colonia → órbita: ${names} · +${cr} CR`, 'success');
+    audio.play('deposit');
+  }
+
+  // ------------------------------------------------------------- Guardado
+
+  /** Estado completo de la partida (JSON puro, sin referencias a three.js). */
+  _serializeState() {
+    const w = this.walle;
+    if (!w) return null;
+    const colonized = this._colonizedCount();
+    const totalPlanets = this.solarSystem ? this.solarSystem.planets.length : 8;
+    const ammo = {};
+    for (const k of Object.keys(w.ammo)) ammo[k] = w.ammo[k] === Infinity ? -1 : w.ammo[k];
+    const stations = this.refinery ? this.refinery.stations.map(st => ({
+      health: Math.round(st.userData.health * 10) / 10,
+      online: !!st.userData.online,
+    })) : [];
+    return {
+      label: `${colonized}/${totalPlanets} planetas · ${w.credits} CR`,
+      playTime: this.playTime,
+      credits: w.credits,
+      planetsColonized: colonized,
+      colonies: this.civ ? this.civ.colonies.size : 0,
+      savedInCiv: this.isCivMode && this.civ && this.civ.planet ? this.civ.planet.config.id : null,
+      walle: {
+        position: w.position.toArray(),
+        rotation: [w.rotation.x, w.rotation.y, w.rotation.z],
+        health: Math.round(w.health * 10) / 10,
+        credits: w.credits,
+        upgrades: { ...w.upgrades },
+        weapons: [...w.weapons],
+        weapon: w.weapon,
+        ammo,
+        materials: { ...w.materials },
+        trashCount: w.trashCount,
+        zoomTarget: w.zoomTarget,
+      },
+      civilization: this.civilization ? {
+        inventory: { ...this.civilization.inventory },
+        built: { ...this.civilization.built },
+        totalBuilt: this.civilization.totalBuilt,
+      } : null,
+      colonies: this.civ ? this.civ.serializeColonies() : {},
+      refinery: stations,
+      stats: { ...this._stats },
+      flags: { won: !!this._won, missionBegun: !!this._missionBegun },
+    };
+  }
+
+  /** Restaura una partida (del navegador o de un archivo). */
+  _applyState(state, meta) {
+    if (!state || !state.walle) return { ok: false, reason: 'Partida incompleta' };
+    try {
+      if (this.isCivMode) this.exitCivMode();
+      if (this.shopOpen) this.closeShop(true);
+      const w = this.walle;
+      const sw = state.walle;
+
+      w.resetStats();
+      if (sw.upgrades) Object.assign(w.upgrades, sw.upgrades);
+      w.applyUpgrades();
+      if (Array.isArray(sw.weapons) && sw.weapons.length) w.weapons = sw.weapons.slice();
+      w.weapon = w.weapons.includes(sw.weapon) ? sw.weapon : w.weapons[0];
+      if (sw.ammo) {
+        for (const k of Object.keys(w.ammo)) {
+          const v = sw.ammo[k];
+          w.ammo[k] = (v === -1 || v === undefined) ? (k === 'laser' || k === 'scatter' ? Infinity : 0) : v;
+        }
+      }
+      if (sw.materials) {
+        for (const k of Object.keys(w.materials)) w.materials[k] = Number(sw.materials[k]) || 0;
+      }
+      w.trashCount = Math.max(0, Math.min(w.trashCapacity, sw.trashCount | 0));
+      w.credits = Number(sw.credits) || 0;
+      w.health = Math.min(w.maxHealth, Math.max(1, Number(sw.health) || w.maxHealth));
+      if (Array.isArray(sw.position)) w.position.fromArray(sw.position);
+      if (Array.isArray(sw.rotation)) w.rotation.set(sw.rotation[0], sw.rotation[1], sw.rotation[2]);
+      w.quaternion.setFromEuler(w.rotation);
+      w.zoomTarget = typeof sw.zoomTarget === 'number' ? sw.zoomTarget : 1;
+      w.spawnPoint.copy(w.position);
+      w.spawnYaw = w.rotation.y;
+      this.scene.add(w.group);
+      w.group.position.copy(w.position);
+      w.group.quaternion.copy(w.quaternion);
+      w.snapCamera();
+      this._lastHealth = w.health;
+
+      if (this.civilization && state.civilization) {
+        const c = this.civilization;
+        for (const k of Object.keys(c.inventory)) c.inventory[k] = Number(state.civilization.inventory?.[k]) || 0;
+        c.built = {};
+        c.totalBuilt = 0;
+        this.solarSystem?.planets.forEach(p => { try { p.clearCivilization(); } catch (e) { /* noop */ } });
+        const built = state.civilization.built || {};
+        for (const planetId of Object.keys(built)) {
+          const planet = this.solarSystem && this.solarSystem.getPlanetById(planetId);
+          const times = Math.max(0, built[planetId] | 0);
+          if (!planet) continue;
+          for (let i = 0; i < times; i++) planet.addCivilizationStructure('dome', this.scene);
+          c.built[planetId] = times;
+          c.totalBuilt += times;
+        }
+        c.notify();
+      }
+
+      if (this.civ) this.civ.loadColonies(state.colonies || {});
+
+      if (this.refinery && Array.isArray(state.refinery)) {
+        state.refinery.forEach((st, i) => {
+          const station = this.refinery.stations[i];
+          if (!station) return;
+          station.userData.health = Math.max(0, Math.min(station.userData.maxHealth, Number(st.health) || 0));
+          station.userData.online = !!st.online;
+        });
+      }
+
+      if (state.stats) Object.assign(this._stats, state.stats);
+      this.playTime = Number(state.playTime) || 0;
+      this._won = !!(state.flags && state.flags.won);
+      this._missionBegun = !!(state.flags && state.flags.missionBegun);
+      if (this.trashSystem) this.trashSystem.reset();
+      if (this.water) this.water.reset();
+      if (this.enemySystem) this.enemySystem.reset();
+      if (this.asteroids) this.asteroids.reset();
+      if (this.particles) this.particles.clear();
+
+      this.hasStarted = true;
+      if (!this.isPlaying) this.startGame();
+      this.hud?.alert(`💾 Partida cargada${meta && meta.label ? ` · ${meta.label}` : ''}`, 'success', 3500);
+      const colonies = this.civ ? this.civ.colonies.size : 0;
+      if (colonies) this.hud?.notify(`🌍 ${colonies} colonia${colonies === 1 ? '' : 's'} restaurada${colonies === 1 ? '' : 's'}: mantén G cerca de un planeta para visitarla${colonies === 1 ? '' : 's'}`, 'info');
+      return { ok: true };
+    } catch (e) {
+      console.error('[Game] _applyState error:', e);
+      return { ok: false, reason: (e && e.message) || String(e) };
+    }
+  }
+
+  /** Guarda en un hueco y avisa del resultado. */
+  saveToSlot(slot, label) {
+    if (!this.save) return { ok: false, reason: 'Guardado no disponible' };
+    const r = this.save.save(slot, label);
+    if (r.ok) this.hud?.notify(`💾 Partida guardada${label ? ` (${label})` : ''}`, 'success');
+    else this.hud?.notify(`No se pudo guardar: ${r.reason}`, 'danger');
+    if (this.menu && this.menu.refreshSaves) this.menu.refreshSaves();
+    return r;
+  }
+
+  loadFromSlot(slot) {
+    if (!this.save) return { ok: false, reason: 'Guardado no disponible' };
+    const r = this.save.load(slot);
+    if (!r.ok) this.hud?.notify(`No se pudo cargar: ${r.reason}`, 'danger');
+    if (this.menu) { this.menu.hide(); }
+    if (this.menu && this.menu.refreshSaves) this.menu.refreshSaves();
+    return r;
+  }
+
+  exportSaveFile(slot) {
+    if (!this.save) return;
+    const r = this.save.exportFile(slot);
+    this.hud?.notify(r.ok ? `📄 Partida descargada: ${r.filename}` : `No se pudo descargar: ${r.reason}`, r.ok ? 'success' : 'danger');
+  }
+
+  async importSaveFile() {
+    if (!this.save) return;
+    const r = await this.save.importFile();
+    if (r.cancelled) return;
+    this.hud?.notify(r.ok ? '📂 Partida cargada desde el archivo' : `No se pudo cargar: ${r.reason}`, r.ok ? 'success' : 'danger');
+    if (r.ok && this.menu) this.menu.hide();
+    if (this.menu && this.menu.refreshSaves) this.menu.refreshSaves();
+  }
+
   animate() {
     requestAnimationFrame(this.animate);
     try {
@@ -914,6 +1411,7 @@ export class Game {
       if (this.input && this.input.consumePause()) {
         const sinceChange = performance.now() - (this._lastStateChange || 0);
         if (this.shopOpen) this.closeShop();
+        else if (this.isCivMode) this.exitCivMode();          // ESC sale de la colonia
         else if (sinceChange > 400) {
           if (this.isPlaying) this.pauseGame();
           else if (this.isPaused) this.resumeGame();
@@ -932,14 +1430,16 @@ export class Game {
         this._updateIdleCamera(delta);
         render = true;
       }
-      if (render && this.particles) this.particles.update(delta, this.camera, this.renderer);
+      const view = (this.isCivMode && this.civ && this.civ.active) ? this.civ.camera : this.camera;
+      if (render && this.particles) this.particles.update(delta, view, this.renderer);
+      if (this.save) this.save.tick(delta);
 
       // En pausa / tienda la escena está congelada: no se vuelve a dibujar
       // (ahorra batería en móvil) salvo que cambie el tamaño o la calidad.
-      if ((render || this._needsRender) && this.renderer && this.scene && this.camera) {
+      if ((render || this._needsRender) && this.renderer && this.scene && view) {
         this._needsRender = false;
         try {
-          this.renderer.render(this.scene, this.camera);
+          this.renderer.render(this.scene, view);
         } catch (err) {
           if (!this._renderErrorLogged) {
             console.error('[Game] render error:', err);

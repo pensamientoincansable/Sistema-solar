@@ -7,12 +7,14 @@
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 5173",
+    "test": "node --test tests/*.test.js",
     "lint": "eslint src --ext .js || true"
   },
   "dependencies": {
     "three": "^0.160.0"
   },
   "devDependencies": {
+    "jsdom": "^25.0.1",
     "vite": "^5.1.0"
   }
 }

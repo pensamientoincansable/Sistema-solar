@@ -63,13 +63,14 @@
             <button class="holo-btn tab-btn" id="btn-civilization" data-section="civilization" type="button">🏗️ Civilizaciones</button>
             <button class="holo-btn tab-btn" id="btn-settings" data-section="settings" type="button">⚙️ Ajustes</button>
             <button class="holo-btn" id="btn-tutorial" type="button">🎓 Tutorial</button>
+            <button class="holo-btn tab-btn" id="btn-save" data-section="save" type="button">💾 Partida</button>
             <button class="holo-btn tab-btn" id="btn-credits" data-section="credits" type="button">ⓘ Créditos</button>
           </div>
           <button class="holo-btn subtle" id="btn-exit" type="button">⏻ Salir <small>Pausa / cerrar</small></button>
         </div>
 
         <div class="key-chips desktop-only">
-          <span>WASD mover</span><span>Ratón mirar</span><span>Clic disparar</span><span>Rueda zoom</span><span>Espacio acción</span><span>T tienda</span>
+          <span>WASD mover</span><span>Ratón mirar</span><span>Clic disparar</span><span>Rueda zoom</span><span>Espacio acción</span><span>T tienda</span><span>G civilizar</span><span>B cinemática</span><span>H pantalla completa</span>
         </div>
       </div>
 
@@ -77,8 +78,11 @@
         <div class="holo-card active" id="section-goal">
           <h3>💡 Objetivo</h3>
           <div class="goal-text">
-            <p>Eres <b>WALL·E</b>, recolector del sistema solar. Recoge basura orbital y <b>💧 gotas de agua</b> (abundan cerca de la Tierra), llévalas a las <b>refinerías ◆</b> y construye civilizaciones adaptadas a cada planeta.</p>
+            <p>Eres <b>WALL·E</b>, recolector del sistema solar. Recoge basura orbital y <b>💧 gotas de agua</b> (abundan cerca de la Tierra), llévalas a las <b>refinerías ◆</b> y <b>aterriza</b> para fundar civilizaciones desde cero en cada planeta.</p>
             <ul>
+              <li>🌍 <b>Civilizar</b>: vuela bajo sobre un planeta y <b>mantén G / 🌍</b> para aterrizar. Empiezas con constructores, granjeros, leñadores y mineros (terrícolas, marcianos…). Arrastra para girar la cámara; G o Esc para despegar.</li>
+              <li>💾 <b>Partida</b>: el progreso se guarda solo en este navegador. En el menú puedes descargar un archivo <code>.json</code> y cargarlo en otro dispositivo.</li>
+              <li>🎬 <b>Visión cinemática</b> (B / 🎬): la cámara gira 360º. El mismo botón restaura el ángulo original. En PC, <b>H / ⛶</b> pone pantalla completa.</li>
               <li>🛸 <b>OVNIs</b>: roban basura con su rayo tractor y te disparan. Derríbalos para recuperarla.</li>
               <li>☄️ <b>Lluvias de asteroides</b>: atacan las refinerías. Destrúyelos y <b>repara</b> las dañadas manteniendo ACCIÓN a su lado.</li>
               <li>🚕 <b>Taxi-Mercader</b>: vende armas y mejoras a cambio de créditos (CR).</li>
@@ -115,6 +119,18 @@
           <button id="btn-tutorial-2" class="holo-btn small-btn wide" type="button">🎓 Ver tutorial de controles</button>
         </div>
 
+        <div class="holo-card" id="section-save">
+          <h3>💾 Partida guardada</h3>
+          <p class="save-intro">El progreso se guarda <b>automáticamente en este navegador</b> (cada 20 s, al pausar y al aterrizar o despegar). Descarga el archivo para seguir en <b>otro navegador o dispositivo</b>.</p>
+          <div id="save-slots" class="save-slots"></div>
+          <div class="save-row">
+            <button id="btn-save-export" class="holo-btn small-btn" type="button">📄 Descargar partida</button>
+            <button id="btn-save-import" class="holo-btn small-btn" type="button">📂 Cargar archivo…</button>
+          </div>
+          <div class="settings-row"><label for="setting-autosave">Autoguardado en el navegador</label><input id="setting-autosave" type="checkbox" class="holo-toggle" checked /></div>
+          <div id="save-status" class="save-status muted">Sin partidas guardadas todavía</div>
+        </div>
+
         <div class="holo-card" id="section-credits">
           <h3>ⓘ Créditos</h3>
           <div class="credits">
@@ -149,6 +165,9 @@
 
     <div class="hud-topright">
       <div class="hud-buttons">
+        <button id="btn-civilize" class="hud-btn hud-touch-btn btn-civilize" data-action="civilize" type="button" title="Mantén para aterrizar y civilizar (G)" aria-label="Civilizar"><span class="mob-icon" data-icon="civilize"></span><span class="btn-key desktop-only">G</span></button>
+        <button id="btn-cinematic" class="hud-btn hud-touch-btn btn-cinematic" data-action="cinematic" type="button" title="Visión cinemática 360º (B)" aria-label="Visión cinemática"><span class="mob-icon" data-icon="cinematic"></span><span class="btn-key desktop-only">B</span></button>
+        <button id="btn-fullscreen" class="hud-btn hud-touch-btn btn-fullscreen desktop-only" data-action="fullscreen" type="button" title="Pantalla completa (H)" aria-label="Pantalla completa"><span class="mob-icon" data-icon="fullscreen"></span><span class="fb-icon" aria-hidden="true">⛶</span></button>
         <button id="btn-zoom" class="hud-btn hud-touch-btn touch-only" data-action="zoom" data-level="0" type="button" aria-label="Distancia de cámara"><span class="mob-icon" data-icon="eye"></span><span class="zoom-dots"><i></i><i></i><i></i><i></i></span></button>
         <button id="btn-pause" class="hud-btn" type="button" title="Pausa (ESC / P)" aria-label="Pausa"><span class="mob-icon" data-icon="pause"></span></button>
       </div>
@@ -180,6 +199,8 @@
         <div>Clic/F disparar · 1-4 armas · Rueda zoom</div>
         <div>Espacio acción (mantén = reparar) · T tienda</div>
         <div>V distancias · C 1ª/3ª persona · Esc pausa</div>
+        <div><b>G</b> mantén junto a un planeta = civilizar 🌍</div>
+        <div><b>B</b> visión cinemática 360º · <b>H</b> pantalla completa</div>
         <div class="muted"><span id="hud-speed">0 u/s</span></div>
       </div>
     </div>
@@ -238,6 +259,12 @@
       </div>
     </div>
   </div>
+
+  <!-- Fundido de transición al entrar/salir del modo civilizar -->
+  <div id="civ-fade" aria-hidden="true"></div>
+
+  <!-- Barras de la visión cinemática -->
+  <div id="cine-bars" aria-hidden="true"><i class="cine-bar top"></i><i class="cine-bar bottom"></i><span class="cine-tag">🎬 VISIÓN CINEMÁTICA · 360º · pulsa B / 🎬 para salir</span></div>
 
   <!-- Aviso de orientación (móvil en vertical) -->
   <div id="rotate-hint"><div>📱↻<br>Gira el móvil a horizontal para jugar mejor</div></div>

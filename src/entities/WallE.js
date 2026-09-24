@@ -12,6 +12,21 @@ const _red = new THREE.Color(0xff2200);
 const _black = new THREE.Color(0x000000);
 
 /**
+ * Chorro del propulsor: verdoso en lugar del cian anterior. Con el turbo
+ * activado hay 3 TONOS que se aclaran al ganar velocidad (verde -> verde claro
+ * -> verde muy claro), de modo que el turbo se nota también por el color.
+ */
+const THRUSTER_BASE = new THREE.Color(0x0d6b2f);      // arrancando (sin turbo)
+const THRUSTER_RUN = new THREE.Color(0x2ecc71);       // verde a velocidad de crucero
+export const BOOST_GREENS = [
+  new THREE.Color(0x12963c),                          // turbo 1: verde
+  new THREE.Color(0x4fe07a),                          // turbo 2: verde claro
+  new THREE.Color(0xb9ff8c),                          // turbo 3: verde muy claro
+];
+export const BOOST_GREEN_NAMES = ['Turbo I', 'Turbo II', 'Turbo III'];
+const _thrusterColor = new THREE.Color();
+
+/**
  * Distancias de cámara del botón 👁 (móvil) y la tecla V:
  * 1 = tercera persona (distancia original), 0 = primera persona.
  */
@@ -74,6 +89,14 @@ export class WallE {
     this.thrusterParticles = null;
     this._flashTime = 0;
     this._flashOn = false;
+    this._thrusterTone = -1;
+
+    // Visión cinemática: la cámara gira 360º alrededor de WALL·E y al salir
+    // recupera EXACTAMENTE el ángulo que tenía al activarla.
+    this.cinematic = {
+      active: false, angle: Math.PI, spin: (Math.PI * 2) / 22, radius: 20,
+      savedYaw: 0, savedPitch: 0, savedZoom: 1, restore: 0, restoreFrom: null, blend: 0,
+    };
 
     this.group.position.copy(this.position);
     this.scene.add(this.group);
@@ -184,7 +207,7 @@ export class WallE {
 
   createThruster() {
     try {
-      this.thrusterLight = new THREE.PointLight(0x00f0ff, 2, 15);
+      this.thrusterLight = new THREE.PointLight(0x2ecc71, 2, 15);
       this.thrusterLight.position.set(0, -0.2, -1.4);
       this.group.add(this.thrusterLight);
     } catch (e) {
@@ -209,7 +232,7 @@ export class WallE {
         geometry: geo,
         velocities: vel,
         points: new THREE.Points(geo, new THREE.PointsMaterial({
-          color: 0x00f0ff,
+          color: 0x2ecc71,
           size: 0.14,
           transparent: true,
           opacity: 0.8,
@@ -256,12 +279,17 @@ export class WallE {
   update(delta, input, solarSystem) {
     try {
       const boosting = input.boost;
+      const cine = this.cinematic.active;
+      const restoring = this.cinematic.restore > 0;
 
       // Giro: velocidad (joystick/gamepad, rad/s) + delta instantáneo (ratón, rad).
       // Sin inversión: derecha -> gira a la derecha, arriba -> mira arriba.
-      this.rotation.y -= input.lookX * delta + input.lookDeltaX;
-      this.rotation.x += input.lookY * delta + input.lookDeltaY;
-      this.rotation.x = THREE.MathUtils.clamp(this.rotation.x, -1.2, 1.2);
+      // En visión cinemática (y al restaurar el ángulo) la cámara manda.
+      if (!cine && !restoring) {
+        this.rotation.y -= input.lookX * delta + input.lookDeltaX;
+        this.rotation.x += input.lookY * delta + input.lookDeltaY;
+        this.rotation.x = THREE.MathUtils.clamp(this.rotation.x, -1.2, 1.2);
+      }
 
       const forward = _v1.set(0, 0, 1).applyEuler(this.rotation);
       // Mirando hacia +Z con Y arriba, la derecha del jugador es -X (sistema diestro).
@@ -327,10 +355,13 @@ export class WallE {
       this.quaternion.setFromEuler(this.rotation);
       this.group.quaternion.slerp(this.quaternion, Math.min(1, delta * 8));
 
-      // Propulsor
+      // Propulsor: chorro verde; con turbo, 3 tonos que se aclaran con la velocidad
       const speedFactor = Math.min(1, this.velocity.length() / Math.max(1, max));
+      const tone = this._updateThrusterColor(speedFactor, boosting);
       if (this.thrusterLight) {
-        this.thrusterLight.intensity = 0.5 + speedFactor * 4 + (boosting ? 3 : 0);
+        this.thrusterLight.intensity = 0.5 + speedFactor * 4 + (boosting ? 3.5 : 0);
+        this.thrusterLight.color.copy(_thrusterColor);
+        this.thrusterLight.distance = boosting ? 22 : 15;
       }
       if (this.thrusterParticles) {
         const positions = this.thrusterParticles.geometry.attributes.position.array;
@@ -348,10 +379,14 @@ export class WallE {
           }
         }
         this.thrusterParticles.geometry.attributes.position.needsUpdate = true;
-        this.thrusterParticles.points.material.opacity = 0.15 + speedFactor * 0.8;
+        const mat = this.thrusterParticles.points.material;
+        mat.opacity = Math.min(1, 0.2 + speedFactor * 0.8 + (boosting ? 0.15 : 0));
+        mat.size = 0.14 * (boosting ? 1.15 + tone * 0.18 : 1);
+        mat.color.copy(_thrusterColor);
       }
 
-      this.updateCamera(delta);
+      if (cine) this._updateCinematicCamera(delta);
+      else this.updateCamera(delta);
       this._updateFlash(delta);
 
       if (this.health < this.maxHealth && !this.overheating) {
@@ -360,6 +395,89 @@ export class WallE {
     } catch (e) {
       console.error('[WALL-E] update error:', e);
     }
+  }
+
+  // -------------------------------------------------------------- Propulsor
+
+  /**
+   * Color del chorro: verde al acelerar y, con el turbo, tres tonos que se
+   * aclaran cuanto más rápido se va. Devuelve el tono (0..2) o -1 sin turbo.
+   */
+  _updateThrusterColor(speedFactor, boosting) {
+    if (boosting) {
+      const tone = speedFactor < 0.5 ? 0 : speedFactor < 0.82 ? 1 : 2;
+      _thrusterColor.copy(BOOST_GREENS[tone]);
+      if (this._thrusterTone !== tone) this._thrusterTone = tone;
+      return tone;
+    }
+    this._thrusterTone = -1;
+    _thrusterColor.copy(THRUSTER_BASE).lerp(THRUSTER_RUN, speedFactor);
+    return -1;
+  }
+
+  get thrusterTone() { return this._thrusterTone; }
+
+  // ------------------------------------------------------- Visión cinemática
+
+  /** Activa la visión cinemática guardando el ángulo actual de la cámara. */
+  startCinematic() {
+    const c = this.cinematic;
+    if (c.active) return false;
+    c.savedYaw = this.rotation.y;
+    c.savedPitch = this.rotation.x;
+    c.savedZoom = this.zoomTarget;
+    c.angle = Math.PI;        // empieza justo detrás de WALL·E (sin salto)
+    c.blend = 0;
+    c.restore = 0;
+    c.restoreFrom = null;
+    c.active = true;
+    this.zoomTarget = 1;      // el modelo debe verse entero
+    return true;
+  }
+
+  /** Desactiva la cinemática y devuelve el ángulo de visión original. */
+  stopCinematic() {
+    const c = this.cinematic;
+    if (!c.active) return false;
+    c.active = false;
+    c.restore = 0.75;                       // vuelta suave…
+    c.restoreFrom = this.camera.position.clone();
+    this.rotation.y = c.savedYaw;           // …al ángulo guardado
+    this.rotation.x = c.savedPitch;
+    this.zoomTarget = c.savedZoom;
+    // _lookAt se conserva: la vista vuelve al ángulo original de forma suave y
+    // updateCamera() lo deja clavado con snapCamera() al terminar.
+    return true;
+  }
+
+  toggleCinematic() {
+    return this.cinematic.active ? (this.stopCinematic() && 'off') : (this.startCinematic() && 'on');
+  }
+
+  /** Vuelta suave a la cámara normal; al terminar se fija el ángulo exacto. */
+  _updateCinematicCamera(delta) {
+    const c = this.cinematic;
+    c.angle += c.spin * delta;              // 360º continuos
+    c.blend = Math.min(1, c.blend + delta * 1.6);
+    this.zoom += (1 - this.zoom) * (1 - Math.pow(0.0005, delta));
+
+    const q = this.group.quaternion;
+    const fwd = _v1.set(0, 0, 1).applyQuaternion(q);
+    const right = _v2.set(-1, 0, 0).applyQuaternion(q);
+    _offset.set(0, 1, 0).applyQuaternion(q).multiplyScalar(5.5);
+    _target.copy(this.position)
+      .addScaledVector(fwd, Math.cos(c.angle) * c.radius)
+      .addScaledVector(right, Math.sin(c.angle) * c.radius)
+      .add(_offset);
+    // Entrada suave desde donde estaba la cámara al activar el modo
+    this.camera.position.lerp(_target, Math.min(1, delta * (1.2 + c.blend * 3)));
+    _look.copy(this.position).addScaledVector(_offset, 0.35);
+    if (!this._lookAt) this._lookAt = _look.clone();
+    this._lookAt.lerp(_look, Math.min(1, delta * 3));
+    this.camera.lookAt(this._lookAt);
+    if (this.mesh) this.mesh.visible = true;
+    if (this.fallbackMesh) this.fallbackMesh.visible = true;
+    if (this.thrusterParticles) this.thrusterParticles.points.visible = true;
   }
 
   // -------------------------------------------------------------- Cámara
@@ -412,6 +530,21 @@ export class WallE {
 
   updateCamera(delta) {
     try {
+      const cine = this.cinematic;
+      if (cine.restore > 0) {
+        // Volviendo de la visión cinemática: se interpola desde la posición de
+        // la órbita y, al acabar, se fija EXACTAMENTE el ángulo original.
+        cine.restore = Math.max(0, cine.restore - delta);
+        if (cine.restore <= 0) {
+          this.rotation.y = cine.savedYaw;
+          this.rotation.x = cine.savedPitch;
+          this.zoomTarget = cine.savedZoom;
+          this.zoom = cine.savedZoom;
+          this.quaternion.setFromEuler(this.rotation);
+          this.snapCamera();
+          return;
+        }
+      }
       // Zoom suavizado (rueda / botón 👁)
       this.zoom += (this.zoomTarget - this.zoom) * (1 - Math.pow(0.0005, delta));
       if (Math.abs(this.zoomTarget - this.zoom) < 0.001) this.zoom = this.zoomTarget;
@@ -425,7 +558,14 @@ export class WallE {
 
       _offset.lerpVectors(this.cameraOffsetFirst, this.cameraOffsetThird, z).applyQuaternion(this.group.quaternion);
       _target.copy(this.position).add(_offset);
-      this.camera.position.lerp(_target, kPos);
+      if (cine.restore > 0 && cine.restoreFrom) {
+        const t = THREE.MathUtils.clamp(1 - cine.restore / 0.75, 0, 1);
+        const e = 1 - Math.pow(1 - t, 3);
+        _target.lerpVectors(cine.restoreFrom, _target, e);
+        this.camera.position.copy(_target);
+      } else {
+        this.camera.position.lerp(_target, kPos);
+      }
 
       _look.lerpVectors(this.lookAheadFirst, this.lookAheadThird, z).applyQuaternion(this.group.quaternion).add(this.position);
       if (!this._lookAt) this._lookAt = _look.clone();
