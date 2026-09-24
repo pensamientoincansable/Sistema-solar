@@ -62,3 +62,20 @@ test('sin contexto el aviso se oculta', () => {
   const prompt = document.getElementById('context-prompt');
   assert.ok(prompt.classList.contains('hidden'));
 });
+
+test('en móvil los botones van centrados arriba, más pequeños, y el radar semitransparente en la esquina', () => {
+  const css = fs.readFileSync(path.join(process.cwd(), 'src/style.css'), 'utf8');
+  // La fila de botones se centra en la parte superior…
+  assert.match(css, /body\.touch-ui \.hud-buttons \{[^}]*left: 50%/, 'los botones táctiles no están centrados');
+  assert.match(css, /body\.touch-ui \.hud-buttons \{[^}]*flex-wrap: nowrap/, 'los botones táctiles no caben en una fila');
+  // …con tamaño reducido para que quepan (52px → 44px)
+  const btnRule = css.match(/body\.touch-ui \.hud-btn \{([^}]*)\}/);
+  assert.ok(btnRule, 'falta la regla de tamaño de los botones táctiles');
+  assert.match(btnRule[1], /width: 44px/, 'los botones táctiles no se reducen a 44px');
+  // El radar queda en la esquina superior derecha y semitransparente
+  assert.match(css, /body\.touch-ui \.mini-map \{[^}]*opacity: 0\.\d+/, 'el radar táctil no es semitransparente');
+  // El objetivo baja por debajo de la fila de botones
+  assert.match(css, /body\.touch-ui \.hud-topcenter \{[^}]*top: calc\(62px/, 'el objetivo no se baja bajo los botones');
+  // El panel de estado no debe solaparse con los botones centrados en vertical
+  assert.match(css, /body\.touch-ui \.hud-status \{[^}]*top: calc\(114px/, 'falta el ajuste del panel de estado en vertical');
+});
