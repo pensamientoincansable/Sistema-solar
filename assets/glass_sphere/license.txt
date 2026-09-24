@@ -1,0 +1,11 @@
+Model Information:
+* title:	Glass Sphere.
+* source:	https://sketchfab.com/3d-models/glass-sphere-4f64c71c1e274e8d82737a67cf44bf8a
+* author:	Antharez_ (https://sketchfab.com/Antherez_)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Glass Sphere." (https://sketchfab.com/3d-models/glass-sphere-4f64c71c1e274e8d82737a67cf44bf8a) by Antharez_ (https://sketchfab.com/Antherez_) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

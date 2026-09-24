@@ -1,0 +1,11 @@
+Model Information:
+* title:	Musgo
+* source:	https://sketchfab.com/3d-models/musgo-452cbfa719434fd7979d72a11185eb0b
+* author:	tamis2397 (https://sketchfab.com/tamis2397)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Musgo" (https://sketchfab.com/3d-models/musgo-452cbfa719434fd7979d72a11185eb0b) by tamis2397 (https://sketchfab.com/tamis2397) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
