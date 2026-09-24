@@ -6,9 +6,12 @@ import { assetUrl } from '../utils/assets.js';
 export const SUN_RADIUS = 10;
 
 export class SolarSystem {
-  constructor(scene, textureLoader) {
+  constructor(scene, textureLoader, options = {}) {
     this.scene = scene;
     this.textureLoader = textureLoader;
+    this.options = options || {};
+    // Cuerpos para colisiones: array reutilizado (antes se creaba cada frame)
+    this._bodies = [{ position: new THREE.Vector3(0, 0, 0), radius: SUN_RADIUS, id: 'sun', planet: null }];
     this.planets = [];
     this.sun = null;
     this.sunRadius = SUN_RADIUS;
@@ -23,7 +26,8 @@ export class SolarSystem {
   init() {
     // Sol
     try {
-      const sunGeo = new THREE.SphereGeometry(SUN_RADIUS, 64, 64);
+      const sunSeg = this.options.lowres ? 40 : 64;
+      const sunGeo = new THREE.SphereGeometry(SUN_RADIUS, sunSeg, sunSeg);
       // MeshBasicMaterial no se ve afectado por luces (el sol emite luz propia).
       // Nota: MeshBasicMaterial NO tiene 'emissive'; pasarlo provocaba warnings.
       const sunMat = new THREE.MeshBasicMaterial({ color: 0xffb830 });
@@ -32,7 +36,7 @@ export class SolarSystem {
       if (this.textureLoader) {
         try {
           const sunTex = this.textureLoader.load(
-            assetUrl('textures/material_baseColor.jpeg'),
+            assetUrl(this.options.lowres ? 'textures/lowres/material_baseColor.jpeg' : 'textures/material_baseColor.jpeg'),
             undefined,
             undefined,
             () => {
@@ -57,7 +61,7 @@ export class SolarSystem {
       // Glow del sol (dos capas aditivas)
       try {
         const mkGlow = (radius, opacity) => {
-          const glowGeo = new THREE.SphereGeometry(radius, 32, 32);
+          const glowGeo = new THREE.SphereGeometry(radius, this.options.lowres ? 20 : 32, this.options.lowres ? 20 : 32);
           const glowMat = new THREE.MeshBasicMaterial({
             color: 0xffaa33,
             transparent: true,
@@ -98,8 +102,9 @@ export class SolarSystem {
     if (Array.isArray(PLANETS_CONFIG)) {
       PLANETS_CONFIG.forEach(cfg => {
         try {
-          const planet = new Planet(cfg, this.textureLoader);
+          const planet = new Planet(cfg, this.textureLoader, { lowres: !!this.options.lowres });
           this.planets.push(planet);
+          this._bodies.push({ position: planet.worldPosition, radius: cfg.radius, id: cfg.id, planet });
           this.scene.add(planet.orbitGroup);
 
           // Línea de órbita
@@ -175,27 +180,33 @@ export class SolarSystem {
     return this.planets.find(p => p.config.id === id);
   }
 
-  getClosestPlanet(position) {
+  /**
+   * Planeta más cercano sin reservar memoria: escribe en `out` ({ planet, distance }).
+   * Usa las posiciones cacheadas en Planet.update().
+   */
+  getClosestPlanetInfo(position, out) {
     let closest = null;
-    let minDist = Infinity;
-    this.planets.forEach(p => {
-      try {
-        const wp = p.getWorldPosition();
-        const d = wp.distanceTo(position);
-        if (d < minDist) { minDist = d; closest = p; }
-      } catch (e) { /* ignore */ }
-    });
-    return { planet: closest, distance: minDist };
+    let minSq = Infinity;
+    for (let i = 0; i < this.planets.length; i++) {
+      const p = this.planets[i];
+      const dSq = p.worldPosition.distanceToSquared(position);
+      if (dSq < minSq) { minSq = dSq; closest = p; }
+    }
+    out.planet = closest;
+    out.distance = Math.sqrt(minSq);
+    return out;
+  }
+
+  getClosestPlanet(position) {
+    return this.getClosestPlanetInfo(position, { planet: null, distance: Infinity });
   }
 
   /**
-   * Cuerpos con los que colisionar (sol + planetas). Devuelve [{ position, radius, id }].
+   * Cuerpos con los que colisionar (sol + planetas): [{ position, radius, id }].
+   * Las posiciones son referencias a los vectores cacheados de cada planeta:
+   * no se reserva memoria por llamada.
    */
   getBodies() {
-    const bodies = [{ position: new THREE.Vector3(0, 0, 0), radius: SUN_RADIUS, id: 'sun' }];
-    for (const p of this.planets) {
-      try { bodies.push({ position: p.getWorldPosition(), radius: p.config.radius, id: p.config.id }); } catch (e) {}
-    }
-    return bodies;
+    return this._bodies;
   }
 }

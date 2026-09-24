@@ -1,5 +1,14 @@
 import './style.css';
 import { Game } from './core/Game.js';
+import { isTouchUI } from './utils/device.js';
+import { injectIcons } from './utils/MobileControls.js';
+
+// Interfaz táctil o de escritorio desde el primer frame (evita parpadeos de
+// paneles que no corresponden al dispositivo).
+try {
+  if (isTouchUI()) document.body.classList.add('touch-ui');
+  injectIcons();
+} catch (e) { /* noop */ }
 
 /**
  * Muestra un mensaje de error en pantalla si la inicialización falla.
@@ -130,18 +139,14 @@ try {
       // Mensaje bienvenida consola
       console.log(
         `%c WALL·E SISTEMA SOLAR %c
-Misión: Recolecta basura espacial y construye civilizaciones
-Controles:
-  WASD / Joystick -> Mover
-  Ratón / Joystick derecho -> Mirar
-  Click / F -> Disparar
-  1/2 -> Cambiar arma (Láser / Plasma)
-  Q / E -> Subir / Bajar
-  ESPACIO -> Depositar en refinería
-  C -> Cambiar cámara (1ra / 3ra persona)
-  Shift -> Boost
+Misión: Recolecta basura espacial y agua, defiende las refinerías y construye civilizaciones
+Controles PC:
+  WASD -> Mover · Ratón -> Mirar · Q / E -> Subir / Bajar · Shift -> Turbo
+  Clic / F -> Disparar · 1-4 -> Armas
+  Rueda -> Distancia de cámara (3ª a 1ª persona) · V -> 4 distancias · C -> 1ª/3ª persona
+  ESPACIO -> Acción (depositar / tienda; mantener = reparar) · R -> Reparar · T -> Tienda
   ESC / P -> Pausa
-Optimizado para Móvil / PC / TV con resolución adaptativa
+Móvil: joysticks dinámicos (izquierda mover, derecha cámara) + botones
 `,
         'background:#00f0ff;color:#000;padding:6px 12px;font-weight:bold;font-family:Orbitron;',
         'color:#e0f7ff;font-family:monospace;'

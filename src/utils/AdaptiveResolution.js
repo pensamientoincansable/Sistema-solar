@@ -1,6 +1,10 @@
+import { isTouchUI } from './device.js';
+
 /**
  * Adaptive Resolution - Optimización para Móvil / PC / TV
- * Ajusta dinámicamente pixel ratio y sombras según rendimiento y dispositivo.
+ * Ajusta dinámicamente el pixel ratio según rendimiento y dispositivo.
+ * (Las sombras ya no se alternan: ninguna luz las proyecta y cambiar
+ * shadowMap.enabled obligaba a recompilar todos los materiales.)
  */
 export class AdaptiveResolution {
   constructor(renderer) {
@@ -22,9 +26,7 @@ export class AdaptiveResolution {
   detectDevice() {
     const ua = (navigator.userAgent || '').toLowerCase();
     const width = window.innerWidth;
-    const coarse = (() => { try { return window.matchMedia('(pointer: coarse)').matches; } catch (e) { return false; } })();
-    const hover = (() => { try { return window.matchMedia('(hover: hover)').matches; } catch (e) { return true; } })();
-    const isTouch = coarse && !hover;
+    const isTouch = isTouchUI();
     const isTVUA = /smart-tv|smarttv|tizen|webos|hbbtv|netcast|viera|googletv|android tv|bravia|appletv|crkey/.test(ua);
 
     // Un monitor 1080p de PC NO es una TV: solo UA de TV o pantallas 4K sin táctil.
@@ -81,18 +83,7 @@ export class AdaptiveResolution {
 
   apply() {
     this.renderer.setPixelRatio(this.currentRatio);
-    const shadowsOn = this.qualityLevel > 0;
-    if (this.renderer.shadowMap.enabled !== shadowsOn) {
-      this.renderer.shadowMap.enabled = shadowsOn;
-      this.renderer.shadowMap.needsUpdate = true;
-    }
-    if (shadowsOn) {
-      const type = this.qualityLevel >= 2 ? 2 : 1; // PCFSoftShadowMap : PCFShadowMap
-      if (this.renderer.shadowMap.type !== type) {
-        this.renderer.shadowMap.type = type;
-        this.renderer.shadowMap.needsUpdate = true;
-      }
-    }
+    if (this.onChange) { try { this.onChange(); } catch (e) { /* noop */ } }
     console.log(`[Adaptive] Device: ${this.deviceType} | Quality: ${this.qualityLevel} | DPR: ${this.currentRatio.toFixed(2)} | auto: ${this.auto}`);
   }
 
@@ -138,12 +129,16 @@ export class AdaptiveResolution {
       deviceType: this.deviceType,
       qualityLevel: this.qualityLevel,
       pixelRatio: this.currentRatio,
-      shadows: this.qualityLevel > 0,
-      postProcessing: this.qualityLevel >= 2,
+      shadows: false,
+      postProcessing: false,
       particleCount: [200, 600, 1200, 2000][this.qualityLevel],
-      trashCount: [40, 80, 150, 200][this.qualityLevel],
-      enemyCount: [4, 8, 12, 16][this.qualityLevel],
-      renderDistance: [400, 800, 1500, 2500][this.qualityLevel]
+      particleMax: [320, 500, 800, 1000][this.qualityLevel],
+      trashCount: [45, 80, 150, 200][this.qualityLevel],
+      waterCount: [40, 60, 90, 110][this.qualityLevel],
+      enemyCount: [4, 6, 9, 12][this.qualityLevel],
+      asteroidsPerWave: [3, 4, 5, 6][this.qualityLevel],
+      renderDistance: [400, 800, 1500, 2500][this.qualityLevel],
+      lowresTextures: this.qualityLevel <= 1
     };
   }
 }

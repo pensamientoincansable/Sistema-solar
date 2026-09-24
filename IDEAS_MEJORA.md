@@ -3,6 +3,24 @@
 ## Propuesta base implementada
 Juego de recolección espacial con WALL·E, sistema solar real con 8 planetas, refinerías orbitales, enemigos piratas, combate láser/plasma, construcción de civilizaciones adaptadas.
 
+## ✅ Implementado en la versión 2 (UI móvil, tutorial y nuevos elementos)
+- [x] **UI móvil rehecha**: joysticks **dinámicos** (aparecen donde se apoya el dedo; izquierda mover, derecha cámara, sin inversión de ejes), botones grandes para dedo adulto, HUD compacto sin solapamientos, menú con pestañas que cabe en horizontal.
+- [x] **Tutorial interactivo** al empezar en táctil (7 pasos con foco, aro y flecha sobre cada control; auto-avance al mover/mirar). Repetible desde el menú.
+- [x] **Ajustes**: sensibilidad de cámara táctil/mando y de ratón, tamaño de controles, vibración, pantalla completa, volumen (ahora con efectos de sonido WebAudio).
+- [x] **Cámara**: WALL·E de espaldas; rueda del ratón de 3ª a 1ª persona; botón 👁 con 4 distancias en móvil.
+- [x] **Lluvias de asteroides** (modelo `assets/asteroides`) contra las refinerías + integridad, estado fuera de servicio y **reparación**.
+- [x] **Agua** (modelo `assets/drop_of_water`) abundante alrededor de la Tierra.
+- [x] **OVNIs** (modelo `assets/nave_espacial_ufo`) con rayo tractor que roba basura (idea "Tractor Beam" aplicada a los enemigos).
+- [x] **Taxi-Mercader** (modelo `assets/b90_taxi_the_fifth_element`): tienda de armas (dispersor, misiles buscadores…) y mejoras (motor, blindaje, bodega, imán, soldador) — primer paso del "árbol de habilidades".
+- [x] Créditos (CR) como economía: depósitos, derribos, asteroides y reparaciones.
+- [x] Vibración háptica en Android (idea de accesibilidad móvil).
+
+### Siguientes pasos sugeridos
+- Guardar progreso (créditos, mejoras, civilizaciones) en `localStorage`/IndexedDB.
+- Instanciar la basura por tipo (`InstancedMesh`) para bajar aún más las draw calls.
+- Compresión de texturas KTX2/Basis para móviles de gama baja.
+- Jefes OVNI por planeta y rutas comerciales del taxi que haya que escoltar.
+
 ---
 
 ## 💡 Ideas para Mejorar el Juego (Roadmap)
@@ -90,11 +108,11 @@ Juego de recolección espacial con WALL·E, sistema solar real con 8 planetas, r
 
 ## 📱 Controles por Plataforma
 
-| Plataforma | Movimiento | Cámara | Disparo | Acción |
-|------------|------------|--------|---------|--------|
-| PC | WASD | Ratón (pointer lock) | Click izq / F | Espacio |
-| TV | D-pad Gamepad | Stick derecho | RT / RB | A |
-| Móvil | Joystick izq | Joystick der | Botón 🔫 | Botón 📦 |
+| Plataforma | Movimiento | Cámara | Distancia cámara | Disparo | Acción |
+|------------|------------|--------|------------------|---------|--------|
+| PC | WASD | Ratón (pointer lock) | Rueda (3ª→1ª), V, C | Click izq / F | Espacio (mantener = reparar), T tienda |
+| TV | Stick izquierdo | Stick derecho | Y | RT / RB | A / X, Back tienda |
+| Móvil | Joystick dinámico izq. | Joystick dinámico der. | Botón 👁 (4 niveles) | Botón 🎯 | Botón ✋ contextual |
 
 ## ✅ Checklist de Errores Solucionados
 
@@ -131,3 +149,16 @@ Juego de recolección espacial con WALL·E, sistema solar real con 8 planetas, r
 - [x] Sin colisión con sol/planetas → rebote amortiguado + daño por calor cerca del sol
 - [x] Enemigos atacaban en el punto de aparición → zona de exclusión + 12 s de gracia
 - [x] HUD repintaba `innerHTML` cada frame → refresco a 10 Hz solo si cambia
+
+### Versión 2
+- [x] Agua, gas, polímero y vidrio no se podían conseguir (Venus, Tierra, Júpiter, Saturno y Neptuno imposibles de civilizar) → nuevos tipos de basura por planeta + gotas de agua.
+- [x] WALL·E miraba hacia la cámara → eliminado el giro de 180° del modelo.
+- [x] La zona táctil a pantalla completa tapaba los botones del HUD → capas reordenadas.
+- [x] Joysticks fijos pequeños y botones superpuestos en móvil → joysticks dinámicos y botones escalables.
+- [x] "Nueva misión" conservaba civilizaciones/enemigos y al morir se reaparecía en una posición antigua → reinicio completo y reaparición junto a la Tierra actual.
+- [x] El control de volumen no tenía efecto → efectos WebAudio.
+- [x] Estado "huida" de los enemigos inexistente → implementado.
+- [x] Una `PointLight` por proyectil, enemigo y refinería (recompilación de shaders y coste por píxel) → halos con sprites y pools.
+- [x] Geometría/material nuevos por proyectil, chispa y pieza de basura + `setTimeout` por destello → pools, partículas en GPU y recursos compartidos.
+- [x] `shadowMap` activado/alternado sin ninguna luz con sombras → desactivado.
+- [x] Los modelos nuevos de `/assets` pesan ~74 MB con texturas 4096² (inviables en móvil) → se cargan versiones GLB optimizadas de ~3,8 MB generadas por `scripts/optimize-assets.mjs`.

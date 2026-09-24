@@ -16,6 +16,7 @@ export const PLANETS_CONFIG = [
     color: 0xaaaaaa,
     trashType: 'metálico',
     trashRichness: 0.8,
+    trashMaterials: ['metal', 'glass', 'energy'],
     civilization: {
       name: 'Forja Solar',
       description: 'Ciudad espejo resistente al calor extremo',
@@ -37,6 +38,7 @@ export const PLANETS_CONFIG = [
     color: 0xe6c229,
     trashType: 'ácido',
     trashRichness: 0.6,
+    trashMaterials: ['polymer', 'gas'],
     civilization: {
       name: 'Aerópolis',
       description: 'Ciudades flotantes sobre nubes ácidas',
@@ -58,6 +60,7 @@ export const PLANETS_CONFIG = [
     color: 0x2b65ec,
     trashType: 'orgánico-tech',
     trashRichness: 1.0,
+    trashMaterials: ['bio', 'metal', 'polymer', 'energy'],
     hasMoon: true,
     moonTexture: 'textures/moon_baseColor.jpeg',
     civilization: {
@@ -81,6 +84,7 @@ export const PLANETS_CONFIG = [
     color: 0xc1440e,
     trashType: 'óxido',
     trashRichness: 0.9,
+    trashMaterials: ['metal', 'concrete', 'glass'],
     civilization: {
       name: 'Ares Dome',
       description: 'Cúpulas presurizadas bajo regolito',
@@ -102,6 +106,7 @@ export const PLANETS_CONFIG = [
     color: 0xd8ca9d,
     trashType: 'gigante',
     trashRichness: 1.2,
+    trashMaterials: ['gas', 'energy', 'metal'],
     civilization: {
       name: 'Estación Jovian',
       description: 'Plataformas magnéticas en atmósfera',
@@ -124,6 +129,7 @@ export const PLANETS_CONFIG = [
     color: 0xf7dc6f,
     trashType: 'anillos',
     trashRichness: 1.1,
+    trashMaterials: ['ice', 'metal', 'polymer'],
     hasRings: true,
     civilization: {
       name: 'Anillo Habitat',
@@ -146,6 +152,7 @@ export const PLANETS_CONFIG = [
     color: 0x43b0f1,
     trashType: 'criogénico',
     trashRichness: 0.7,
+    trashMaterials: ['ice', 'crystal', 'energy'],
     civilization: {
       name: 'Cryo Vault',
       description: 'Bóvedas cuánticas en hielo',
@@ -167,6 +174,7 @@ export const PLANETS_CONFIG = [
     color: 0x2e68f7,
     trashType: 'oscuro',
     trashRichness: 0.75,
+    trashMaterials: ['crystal', 'gas', 'ice'],
     civilization: {
       name: 'Abismo Azul',
       description: 'Estaciones de aguas profundas',
@@ -180,7 +188,7 @@ export const PLANETS_CONFIG = [
 export const MATERIALS = {
   metal: { name: 'Metal', color: '#a0a0a0', icon: '🔩' },
   polymer: { name: 'Polímero', color: '#ff6b6b', icon: '🧪' },
-  glass: { name: 'Cristal', color: '#7fdbff', icon: '🔷' },
+  glass: { name: 'Vidrio', color: '#7fdbff', icon: '🔷' },
   energy: { name: 'Energía', color: '#ffe600', icon: '⚡' },
   bio: { name: 'Biomasa', color: '#2ecc40', icon: '🌱' },
   water: { name: 'Agua', color: '#0074d9', icon: '💧' },
@@ -191,16 +199,26 @@ export const MATERIALS = {
 };
 
 export const TRASH_TYPES = [
-  { id: 'satellite', model: 'cube', scale: 1.2, value: 10, material: 'metal', color: 0x888888 },
-  { id: 'panel', model: 'plane', scale: 1.5, value: 15, material: 'energy', color: 0x2222aa },
-  { id: 'rocket', model: 'cylinder', scale: 2.0, value: 25, material: 'metal', color: 0xdddddd },
-  { id: 'organic', model: 'sphere', scale: 0.8, value: 8, material: 'bio', color: 0x44aa44 },
-  { id: 'crystal', model: 'octahedron', scale: 1.0, value: 30, material: 'crystal', color: 0xff00ff },
-  { id: 'ice', model: 'icosahedron', scale: 1.3, value: 12, material: 'ice', color: 0xa0e0ff }
+  { id: 'satellite', name: 'Satélite', model: 'cube', scale: 1.2, value: 10, material: 'metal', color: 0x888888 },
+  { id: 'panel', name: 'Panel solar', model: 'plane', scale: 1.5, value: 15, material: 'energy', color: 0x2244bb },
+  { id: 'rocket', name: 'Etapa de cohete', model: 'cylinder', scale: 2.0, value: 25, material: 'metal', color: 0xdddddd },
+  { id: 'organic', name: 'Residuo orgánico', model: 'sphere', scale: 0.8, value: 8, material: 'bio', color: 0x44aa44 },
+  { id: 'crystal', name: 'Cristal cuántico', model: 'octahedron', scale: 1.0, value: 30, material: 'crystal', color: 0xff00ff },
+  { id: 'ice', name: 'Bloque de hielo', model: 'icosahedron', scale: 1.3, value: 12, material: 'ice', color: 0xa0e0ff },
+  // Nuevos: sin ellos gas, polímero y vidrio no se podían conseguir
+  { id: 'gas_tank', name: 'Tanque de gas', model: 'capsule', scale: 1.1, value: 14, material: 'gas', color: 0xb14dff },
+  { id: 'plastic', name: 'Plástico espacial', model: 'torus', scale: 1.0, value: 12, material: 'polymer', color: 0xff6b6b },
+  { id: 'glass', name: 'Vidrio de escotilla', model: 'tetra', scale: 1.1, value: 12, material: 'glass', color: 0x7fdbff },
+  // Fragmentos de asteroide (hormigón/regolito): cinturón, Marte y asteroides destruidos
+  { id: 'rock', name: 'Fragmento de asteroide', model: 'dodeca', scale: 1.0, value: 10, material: 'concrete', color: 0x9a8a78, random: false },
 ];
 
+/**
+ * Enemigos: OVNIs (modelo assets/nave_espacial_ufo). `size` = diámetro en
+ * unidades del mundo; `color` tiñe las luces emisivas del platillo.
+ */
 export const ENEMY_TYPES = [
-  { id: 'drone', speed: 12, health: 40, damage: 10, color: 0xff3333, scale: 1.0, loot: 5 },
-  { id: 'pirate', speed: 8, health: 80, damage: 20, color: 0xff8800, scale: 1.5, loot: 15 },
-  { id: 'mothership', speed: 4, health: 200, damage: 35, color: 0xaa00ff, scale: 3.0, loot: 50 }
+  { id: 'drone', name: 'Dron OVNI', speed: 13, health: 40, damage: 8, color: 0xff3344, size: 3.2, loot: 2, credits: 20, fireInterval: 1.8, weight: 0.58 },
+  { id: 'pirate', name: 'OVNI pirata', speed: 9, health: 90, damage: 13, color: 0xff9900, size: 4.6, loot: 3, credits: 35, fireInterval: 1.25, weight: 0.34 },
+  { id: 'mothership', name: 'Nave nodriza', speed: 5, health: 260, damage: 20, color: 0xb04dff, size: 10, loot: 7, credits: 90, fireInterval: 0.9, weight: 0.08 }
 ];
