@@ -1124,6 +1124,92 @@ body.civ-mode #mobile-controls { display: none !important; }
 .civ-btn:hover:not(:disabled) { background: rgba(0,240,255,0.18); }
 .civ-btn:disabled { opacity: 0.42; cursor: default; }
 .civ-btn.primary { border-color: rgba(57,255,122,0.7); color: #9dffb9; box-shadow: 0 0 14px rgba(57,255,122,0.22); }
+.civ-btn.active { border-color: #39ff7a; color: #9dffb9; background: rgba(57,255,122,0.16); }
+.civ-btn.danger { border-color: rgba(255,90,80,0.6); color: #ffb3ab; }
+.civ-btn.wide { width: 100%; justify-content: center; margin-top: 5px; }
+.civ-btn em { font-style: normal; opacity: 0.75; }
+
+/* Muelle inferior: guía, panel del edificio y barra de órdenes */
+.civ-dock {
+  position: absolute;
+  left: 50%; transform: translateX(-50%);
+  bottom: calc(74px + var(--safe-b));
+  width: min(700px, calc(100% - 20px));
+  display: flex; flex-direction: column; align-items: stretch; gap: 6px;
+  pointer-events: none;
+}
+.civ-dock > * { pointer-events: auto; }
+.civ-panel {
+  background: var(--panel);
+  border: 1px solid rgba(0,240,255,0.3);
+  border-radius: 12px;
+  box-shadow: 0 8px 26px rgba(0,0,0,0.45);
+  padding: 8px 10px;
+}
+.civ-x {
+  margin-left: auto; background: none; border: none; color: inherit; opacity: 0.55;
+  cursor: pointer; font-size: 0.72rem; padding: 2px 4px; line-height: 1;
+}
+.civ-x:hover { opacity: 1; color: #ff9a8a; }
+
+/* --- Tutorial del primer planeta --- */
+.civ-tut { display: none; border-color: rgba(255,210,0,0.45); }
+.civ-tut.on { display: block; }
+.civ-tut-bar { display: flex; align-items: center; gap: 7px; font-size: 0.7rem; }
+.civ-tut-icon { font-size: 1.05rem; }
+.civ-tut-bar b { font-family: 'Orbitron'; font-size: 0.7rem; letter-spacing: 0.03em; }
+.civ-tut-progress { font-family: 'Orbitron'; font-size: 0.58rem; opacity: 0.6; }
+.civ-tut-text { margin: 4px 0 6px; font-size: 0.68rem; line-height: 1.4; opacity: 0.9; }
+.civ-tut-foot { display: flex; align-items: center; gap: 9px; }
+.civ-tut-foot .civ-btn { min-height: 30px; padding: 4px 12px; font-size: 0.6rem; }
+.civ-tut-note { font-size: 0.58rem; opacity: 0.55; }
+
+/* --- Panel del edificio seleccionado --- */
+.civ-town { display: none; }
+.civ-town.on { display: block; width: 300px; max-width: 100%; }
+.civ-town-head { display: flex; align-items: center; gap: 8px; }
+.civ-town-icon { font-size: 1.3rem; }
+.civ-town-title { min-width: 0; }
+.civ-town-title b { font-family: 'Orbitron'; font-size: 0.74rem; display: block; }
+.civ-town-title small { font-size: 0.6rem; opacity: 0.65; }
+.civ-town-body { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.civ-town-row { display: flex; justify-content: space-between; gap: 8px; font-size: 0.66rem; opacity: 0.9; }
+.civ-town-row b { font-family: 'Orbitron'; color: var(--holo-cyan); }
+.civ-town-note { font-size: 0.6rem; line-height: 1.35; opacity: 0.7; }
+.civ-town-note.warn { color: #ffd000; opacity: 1; }
+.civ-bar { height: 6px; border-radius: 4px; background: rgba(255,255,255,0.12); overflow: hidden; }
+.civ-bar i { display: block; height: 100%; background: linear-gradient(90deg, #39ff7a, #00f0ff); }
+.civ-bar.train i { background: linear-gradient(90deg, #ffd000, #ff9a3b); }
+
+/* --- Barra de órdenes de los civiles --- */
+.civ-sel { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.civ-sel-count { font-size: 0.66rem; white-space: nowrap; opacity: 0.85; }
+.civ-sel-count b { font-family: 'Orbitron'; color: var(--holo-cyan); }
+.civ-sel.empty .civ-sel-count { opacity: 0.55; }
+.civ-orders { display: flex; gap: 5px; flex-wrap: wrap; }
+.civ-order {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  min-width: 52px; padding: 4px 6px; border-radius: 9px; cursor: pointer;
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+  color: inherit; font-family: inherit;
+}
+.civ-order:hover:not(:disabled) { background: rgba(0,240,255,0.16); border-color: rgba(0,240,255,0.5); }
+.civ-order:disabled { opacity: 0.35; cursor: default; }
+.civ-order.off { border-style: dashed; }
+.civ-order.active { border-color: #39ff7a; background: rgba(57,255,122,0.18); box-shadow: 0 0 10px rgba(57,255,122,0.25); }
+.civ-order-icon { font-size: 1.05rem; line-height: 1; }
+.civ-order i { font-size: 0.55rem; font-style: normal; opacity: 0.8; }
+.civ-sel-tools { display: flex; gap: 5px; margin-left: auto; }
+.civ-sel-tools .civ-btn { min-height: 34px; padding: 4px 9px; font-size: 0.58rem; }
+
+/* Recuadro de selección múltiple (lo crea CivMode) */
+#civ-select-box {
+  position: fixed; z-index: 30; display: none; pointer-events: none;
+  border: 1px solid rgba(57,255,122,0.9);
+  background: rgba(57,255,122,0.14);
+  box-shadow: 0 0 14px rgba(57,255,122,0.35), inset 0 0 14px rgba(57,255,122,0.18);
+  border-radius: 3px;
+}
 
 /* Móvil / pantallas bajas: paneles convertidos en tiras */
 @media (max-width: 900px), (max-height: 560px) {
@@ -1132,17 +1218,23 @@ body.civ-mode #mobile-controls { display: none !important; }
   .civ-top { position: static; }
   .civ-left { order: 2; }
   .civ-right { order: 3; display: none; }
-  .civ-bottom { position: static; order: 4; flex-direction: column; align-items: stretch; }
+  .civ-dock { position: static; transform: none; width: auto; order: 4; }
+  .civ-bottom { position: static; order: 5; flex-direction: column; align-items: stretch; }
   .civ-log { max-height: 40px; overflow: hidden; }
   .civ-actions { justify-content: center; }
   .civ-btn { flex: 1; justify-content: center; font-size: 0.58rem; padding: 7px 6px; }
   .civ-res { order: 1; justify-content: flex-start; }
   .civ-res-item { min-width: 54px; padding: 1px 5px; }
+  .civ-town { width: auto; }
+  .civ-sel { justify-content: center; }
+  .civ-sel-tools { margin-left: 0; }
+  .civ-order { min-width: 46px; }
 }
 @media (max-width: 900px) and (orientation: landscape), (max-height: 560px) {
   .civ-right { display: flex; }
   #civ-ui.visible { grid-template-columns: 1fr 1fr; grid-template-rows: auto 1fr auto; }
   .civ-top { grid-column: 1 / -1; }
+  .civ-dock { grid-column: 1 / -1; }
   .civ-bottom { grid-column: 1 / -1; flex-direction: row; align-items: flex-end; }
   .civ-log { max-height: 62px; }
 }

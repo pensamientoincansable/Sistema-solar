@@ -3,20 +3,65 @@ import { Colony, tileToLocal, localToTile, inGrid } from './Colony.js';
 import {
   BUILDINGS, ERAS, GRID, TILE, CITY_RADIUS, TERRAIN_RADIUS, UNIT_TYPES, planetCiv,
 } from './CivConfig.js';
+import { CivAssets } from './CivAssets.js';
+import { CivSky, surfaceHeight } from './CivSky.js';
+import {
+  buildStructure, buildForestNode, buildVeinNode, buildCrystalNode, buildScatter,
+} from './CivStructures.js';
+import { buildCitizen, citizenLook, animateCitizen } from './CivActors.js';
+import { CivTutorial } from './CivTutorial.js';
 
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
 const _ndc = new THREE.Vector2();
 const _up = new THREE.Vector3(0, 1, 0);
+const _mat4 = new THREE.Matrix4();
+const _quat = new THREE.Quaternion();
+const _euler = new THREE.Euler();
+const _scale = new THREE.Vector3();
+const _pos = new THREE.Vector3();
+
+/** Sombras de contacto simuladas (un solo InstancedMesh para toda la colonia). */
+const MAX_BLOBS = 96;
+
+/** Recuerda la opacidad y el emisivo originales de un material clonado. */
+function remember(mat) {
+  if (!mat) return mat;
+  mat.userData.baseOpacity = mat.opacity;
+  mat.userData.baseEmissive = mat.emissive ? mat.emissive.getHex() : 0x000000;
+  return mat;
+}
 
 /** Altura del terreno: llano dentro de la ciudad, colinas fuera. */
 export function heightAt(x, z) {
   const r = Math.hypot(x, z);
-  const blend = THREE.MathUtils.smoothstep(r, CITY_RADIUS * 0.45, CITY_RADIUS * 1.05);
+  // Dentro de la rejilla el suelo es prácticamente plano (los edificios se
+  // apoyan en él sin hundirse); las colinas empiezan ya en el límite de la
+  // ciudad y crecen hacia el horizonte.
+  const blend = THREE.MathUtils.smoothstep(r, CITY_RADIUS * 0.8, CITY_RADIUS * 1.6);
   const n = Math.sin(x * 0.16) * Math.cos(z * 0.13)
     + Math.sin((x + z) * 0.07) * 0.8
     + Math.cos((x - z) * 0.11) * 0.6;
   return n * 2.4 * blend;
+}
+
+/** Altura del suelo en la colonia (relieve local + curvatura del planeta). */
+export function groundAt(x, z) {
+  return surfaceHeight(x, z, heightAt);
+}
+
+/**
+ * Pega una geometría plana del plano XZ al relieve (rejilla, aros...). Sin
+ * esto, las piezas planas flotan allí donde el terreno se curva.
+ */
+function hugGround(geo, lift = 0) {
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    pos.setY(i, groundAt(pos.getX(i), pos.getZ(i)) + lift);
+  }
+  pos.needsUpdate = true;
+  geo.computeBoundingSphere();
+  return geo;
 }
 
 function disposeObject(root) {
@@ -40,29 +85,40 @@ export class CivMode {
     this.scene = scene;
     this.renderer = renderer;
     this.options = options;
-    this.camera = new THREE.PerspectiveCamera(55, window.innerWidth / Math.max(1, window.innerHeight), 0.1, 2500);
+    this.assets = new CivAssets({ lowres: !!options.lowres });
+    this.camera = new THREE.PerspectiveCamera(52, window.innerWidth / Math.max(1, window.innerHeight), 0.5, 6000);
     this.colonies = new Map();
     this.active = false;
     this.planet = null;
     this.colony = null;
     this.root = null;
+    this.env = null;
+    this.sky = null;
     this.terrain = null;
     this.lights = null;
     this.grid = null;
     this.marker = null;
     this.ghost = null;
+    this.blobs = null;
     this.bMeshes = new Map();
     this.uMeshes = new Map();
     this.nMeshes = new Map();
     this.pendingType = null;
     this.selectedTile = null;
+    this.selection = new Set();
+    this.selectedBuilding = null;
+    this.boxMode = false;
+    this.tutorial = null;
+    this._tutorialLoaded = false;
     this.view = { yaw: 0.8, pitch: 0.92, dist: 58, fx: 0, fz: 0 };
     this.time = 0;
     this.onEvent = null;
     this.onChanged = null;
     this._pointer = { active: false, id: null, x: 0, y: 0, moved: 0, t0: 0 };
-    this._pinch = { active: false, dist: 0 };
+    this._pinch = { active: false, dist: 0, cx: 0, cy: 0 };
     this._pointers = new Map();
+    this._box = null;
+    this._hidden = [];
     this._ray = new THREE.Raycaster();
     this._bound = {
       down: (e) => this._onPointerDown(e),
@@ -71,6 +127,7 @@ export class CivMode {
       wheel: (e) => this._onWheel(e),
       resize: () => this._onResize(),
     };
+    this._makeBoxOverlay();
   }
 
   // --------------------------------------------------------------- Colonias
@@ -135,10 +192,33 @@ export class CivMode {
     return out;
   }
 
+  /** Estado del tutorial del primer planeta (null si no se ha empezado). */
+  serializeTutorial() { return this.tutorial ? this.tutorial.toJSON() : null; }
+
+  loadTutorial(data) {
+    this._tutorialLoaded = true;
+    this.tutorial = data ? CivTutorial.fromJSON(data, this.colony) : null;
+    return this.tutorial;
+  }
+
+  /** Crea (o reengancha) el tutorial del primer planeta aterrizado. */
+  _ensureTutorial() {
+    if (this._tutorialLoaded || this.tutorial) return this.tutorial;
+    if (this.colonies.size !== 1) return null;   // sólo el primer planeta
+    try {
+      this.tutorial = new CivTutorial(this.colony, { planetId: this.colony.planetId });
+    } catch (e) {
+      this.tutorial = null;
+    }
+    return this.tutorial;
+  }
+
   reset() {
     this.exit();
     for (const c of this.colonies.values()) { try { c.events.length = 0; } catch (e) { /* noop */ } }
     this.colonies.clear();
+    this.tutorial = null;
+    this._tutorialLoaded = false;
   }
 
   // ----------------------------------------------------------------- Entrar
@@ -148,19 +228,33 @@ export class CivMode {
     try {
       this.planet = planet;
       this.colony = this.getColony(planet.config.id);
+      this._ensureTutorial();
+      // La guía pertenece al primer planeta: no se muestra en los demás.
+      if (this.tutorial && this.tutorial.planetId === this.colony.planetId) {
+        this.tutorial.setColony(this.colony);
+      }
       this.root = new THREE.Group();
       this.root.name = `civ-${planet.config.id}`;
 
-      // Punto de aterrizaje: el lado del planeta que mira a WALL·E (se pasa por options)
-      const n = (this.options && this.options.landingNormal) ? this.options.landingNormal.clone().normalize() : new THREE.Vector3(1, 0, 0);
+      // Punto de aterrizaje: el lado del planeta que mira a WALL·E (options)
+      const n = (this.options && this.options.landingNormal)
+        ? this.options.landingNormal.clone().normalize()
+        : new THREE.Vector3(1, 0, 0);
       this.root.quaternion.setFromUnitVectors(_up, n);
-      this.root.position.copy(n).multiplyScalar(planet.config.radius - 0.05);
+      this.root.position.copy(n).multiplyScalar(Math.max(0.5, planet.config.radius - 0.05));
       planet.group.add(this.root);
 
+      // La escena espacial (sol, planetas, anillos, lunas, basura...) se oculta:
+      // desde la superficie el sol y los anillos atravesaban el terreno y el
+      // resplandor del sol inundaba la pantalla en Mercurio y Venus.
+      this._hideSpace();
+
       this._buildTerrain(planet);
+      this._buildSky(planet);
       this._buildLights(planet);
       this._buildGrid();
       this._buildMarker();
+      this._buildBlobs();
       this._sync(true);
 
       this.view = { yaw: 0.8, pitch: 0.95, dist: 56, fx: 0, fz: 0 };
@@ -181,6 +275,8 @@ export class CivMode {
       this.active = true;
       this.pendingType = null;
       this.selectedTile = null;
+      this.selection.clear();
+      this.selectedBuilding = null;
       if (this.onChanged) this.onChanged('enter', this.colony);
       return true;
     } catch (e) {
@@ -218,20 +314,51 @@ export class CivMode {
       } catch (e) { /* noop */ }
       this.root = null;
     }
+    this._restoreSpace();
     this.terrain = null;
     this.grid = null;
     this.marker = null;
     this.ghost = null;
+    this.blobs = null;
+    this.env = null;
+    this.sky = null;
     this.colony = null;
     this.planet = null;
+    this.selection.clear();
+    this.selectedBuilding = null;
     this._pointers.clear();
+    this._hideBox();
+  }
+
+  /** Oculta el espacio y devuelve la lista de objetos tocados. */
+  _hideSpace() {
+    this._hidden = [];
+    const keep = new Set();
+    for (let p = this.root; p; p = p.parent) keep.add(p);
+    const hide = (obj) => {
+      if (!obj || keep.has(obj) || !obj.visible) return;
+      obj.visible = false;
+      this._hidden.push(obj);
+    };
+    for (const child of this.scene.children) hide(child);
+    // Adornos del propio planeta: malla, atmósfera, anillos y luna. La colonia
+    // es mucho más grande que el planeta, así que sin esto la esfera del planeta
+    // y los anillos de Saturno atravesaban el asentamiento.
+    if (this.planet && this.planet.group) {
+      for (const child of this.planet.group.children) hide(child);
+    }
+  }
+
+  _restoreSpace() {
+    for (const o of this._hidden) { try { o.visible = true; } catch (e) { /* noop */ } }
+    this._hidden = [];
   }
 
   // ------------------------------------------------------------- Construcción
 
   _buildTerrain(planet) {
     const theme = planetCiv(planet.config.id);
-    const geo = new THREE.CircleGeometry(TERRAIN_RADIUS, 72);
+    const geo = new THREE.CircleGeometry(TERRAIN_RADIUS, 96);
     geo.rotateX(-Math.PI / 2);
     const pos = geo.attributes.position;
     const colors = new Float32Array(pos.count * 3);
@@ -241,36 +368,62 @@ export class CivMode {
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i);
       const z = pos.getZ(i);
-      const y = heightAt(x, z);
-      pos.setY(i, y);
-      const k = THREE.MathUtils.clamp((y + 2.4) / 4.8, 0, 1);
+      pos.setY(i, groundAt(x, z));
+      const k = THREE.MathUtils.clamp((pos.getY(i) + 2.4) / 4.8, 0, 1);
       tmp.copy(ground).lerp(rock, k * 0.85);
       colors[i * 3] = tmp.r; colors[i * 3 + 1] = tmp.g; colors[i * 3 + 2] = tmp.b;
     }
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geo.computeVertexNormals();
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0.02 });
+    const tex = this.assets.groundTexture();
+    const mat = new THREE.MeshStandardMaterial({
+      vertexColors: true, roughness: 0.96, metalness: 0.02,
+      map: tex || null,
+    });
+    if (tex) { mat.map = tex.clone(); mat.map.needsUpdate = true; mat.map.wrapS = mat.map.wrapT = THREE.RepeatWrapping; mat.map.repeat.set(16, 16); }
     this.terrain = new THREE.Mesh(geo, mat);
     this.terrain.name = 'civ-terrain';
     this.root.add(this.terrain);
 
-    // Borde del asentamiento
-    const ring = new THREE.Mesh(
-      new THREE.RingGeometry(CITY_RADIUS - 0.4, CITY_RADIUS, 96),
-      new THREE.MeshBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false })
-    );
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.y = 0.06;
-    this.root.add(ring);
+    // Límite del asentamiento: dos aros brillantes pegados al relieve
+    for (const [r0, r1, op] of [[CITY_RADIUS - 0.5, CITY_RADIUS, 0.5], [CITY_RADIUS + 1.6, CITY_RADIUS + 2.1, 0.16]]) {
+      const geo = new THREE.RingGeometry(r0, r1, 96);
+      geo.rotateX(-Math.PI / 2);
+      hugGround(geo, 0.07);
+      const ring = new THREE.Mesh(
+        geo,
+        new THREE.MeshBasicMaterial({
+          color: 0x00f0ff, transparent: true, opacity: op,
+          side: THREE.DoubleSide, depthWrite: false,
+        })
+      );
+      ring.name = 'civ-limit';
+      this.root.add(ring);
+    }
+
+    // Decoración fuera de la ciudad (rocas, matas, cristales)
+    const scatter = buildScatter(this.assets, theme, this.assets.lowres ? 14 : 30);
+    if (scatter) {
+      const mesh = new THREE.Mesh(scatter, this.assets.solidMaterial().clone());
+      mesh.name = 'civ-scatter';
+      this.root.add(mesh);
+    }
+  }
+
+  _buildSky(planet) {
+    this.sky = new CivSky(this.assets, planetCiv(planet.config.id));
+    this.env = this.sky.group;
+    this.root.add(this.env);
   }
 
   _buildLights(planet) {
     const theme = planetCiv(planet.config.id);
     this.lights = new THREE.Group();
-    const hemi = new THREE.HemisphereLight(theme.sky, theme.ground, 0.75);
-    const dir = new THREE.DirectionalLight(0xfff3dd, 1.35);
+    const hemi = new THREE.HemisphereLight(theme.sky, theme.ground, 0.85);
+    // La dirección del sol coincide con el disco del cielo (CivSky.SUN_DIR)
+    const dir = new THREE.DirectionalLight(0xfff3dd, 1.5);
     dir.position.set(40, 80, 30);
-    const fill = new THREE.DirectionalLight(theme.sky, 0.4);
+    const fill = new THREE.DirectionalLight(theme.sky, 0.45);
     fill.position.set(-30, 25, -40);
     this.lights.add(hemi, dir, fill);
     this.root.add(this.lights);
@@ -281,13 +434,17 @@ export class CivMode {
     this.grid.material.transparent = true;
     this.grid.material.opacity = 0.22;
     this.grid.material.depthWrite = false;
-    this.grid.position.y = 0.12;
+    // La rejilla sigue el relieve: en el borde de la ciudad el suelo baja y
+    // unas líneas planas quedarían flotando en el aire.
+    hugGround(this.grid.geometry, 0.1);
     this.grid.visible = false;
     this.root.add(this.grid);
   }
 
   _buildMarker() {
-    const mat = new THREE.MeshBasicMaterial({ color: 0x39ff7a, transparent: true, opacity: 0.75, side: THREE.DoubleSide, depthWrite: false });
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x39ff7a, transparent: true, opacity: 0.75, side: THREE.DoubleSide, depthWrite: false,
+    });
     this.marker = new THREE.Mesh(new THREE.RingGeometry(TILE * 0.36, TILE * 0.48, 4), mat);
     this.marker.rotation.x = -Math.PI / 2;
     this.marker.rotation.z = Math.PI / 4;
@@ -300,260 +457,133 @@ export class CivMode {
     );
     this.ghost.visible = false;
     this.root.add(this.ghost);
+
+    // Aro que rodea al edificio elegido (ayuntamiento, granja...)
+    this.selRing = new THREE.Mesh(
+      new THREE.RingGeometry(TILE * 0.52, TILE * 0.66, 28),
+      new THREE.MeshBasicMaterial({
+        color: 0xffd166, transparent: true, opacity: 0.85,
+        side: THREE.DoubleSide, depthWrite: false,
+      })
+    );
+    this.selRing.rotation.x = -Math.PI / 2;
+    this.selRing.visible = false;
+    this.root.add(this.selRing);
+  }
+
+  /** Sombras de contacto: un único InstancedMesh para todos los civiles. */
+  _buildBlobs() {
+    const geo = new THREE.CircleGeometry(0.55, this.assets.lowres ? 10 : 18);
+    geo.rotateX(-Math.PI / 2);
+    const glow = this.assets.glowTexture();
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x000000, map: glow || null, transparent: true, opacity: 0.34,
+      depthWrite: false, fog: false,
+    });
+    this.blobs = new THREE.InstancedMesh(geo, mat, MAX_BLOBS);
+    this.blobs.name = 'civ-blobs';
+    this.blobs.count = 0;
+    this.blobs.frustumCulled = false;
+    this.blobs.renderOrder = 1;
+    this.root.add(this.blobs);
+  }
+
+  _makeBoxOverlay() {
+    try {
+      const el = document.createElement('div');
+      el.id = 'civ-select-box';
+      el.style.display = 'none';
+      document.body.appendChild(el);
+      this._boxEl = el;
+    } catch (e) { this._boxEl = null; }
   }
 
   // -------------------------------------------------------- Mallas de objetos
 
-  _mat(color, opts = {}) {
-    const m = new THREE.MeshStandardMaterial({
-      color, roughness: opts.roughness ?? 0.7, metalness: opts.metalness ?? 0.15,
-      emissive: opts.emissive ?? 0x000000, emissiveIntensity: opts.emissiveIntensity ?? 1,
-      transparent: !!opts.transparent, opacity: opts.opacity ?? 1, flatShading: !!opts.flat,
-    });
-    // Valores originales: al terminar una obra hay que devolverlos (la obra en
-    // curso se dibuja semitransparente y encogida).
-    m.userData.baseOpacity = m.opacity;
-    m.userData.baseEmissive = m.emissive.getHex();
-    return m;
-  }
-
   _makeBuildingMesh(building) {
     const def = BUILDINGS[building.type];
     const theme = planetCiv(this.planet.config.id);
+    const built = buildStructure(building.type, this.assets, theme, this.assets.lowres);
     const g = new THREE.Group();
-    const accent = new THREE.Color(theme.sky).lerp(new THREE.Color(0xffffff), 0.55).getHex();
-    const wall = this._mat(new THREE.Color(theme.rock).lerp(new THREE.Color(0xffffff), 0.35).getHex());
-    const glow = this._mat(accent, { emissive: accent, emissiveIntensity: 0.9, roughness: 0.4 });
-    const dark = this._mat(0x2b2f36, { metalness: 0.6, roughness: 0.4 });
-
-    const box = (w, h, d, m, y = 0) => {
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
-      mesh.position.y = y + h / 2;
+    const mats = [];
+    if (built.solid) {
+      const mesh = new THREE.Mesh(built.solid, this.assets.solidMaterial().clone());
+      mesh.castShadow = false;
       g.add(mesh);
-      return mesh;
-    };
-    const cyl = (rt, rb, h, m, y = 0, seg = 12) => {
-      const mesh = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), m);
-      mesh.position.y = y + h / 2;
-      g.add(mesh);
-      return mesh;
-    };
-
-    switch (building.type) {
-      case 'center': {
-        cyl(3.2, 3.6, 1.2, wall, 0, 16);
-        const dome = new THREE.Mesh(new THREE.SphereGeometry(2.6, 20, 14, 0, Math.PI * 2, 0, Math.PI / 2), glow);
-        dome.position.y = 1.2;
-        g.add(dome);
-        cyl(0.22, 0.22, 3.4, dark, 1.2);
-        const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 8), glow);
-        beacon.position.y = 4.8;
-        g.add(beacon);
-        break;
-      }
-      case 'house': {
-        box(3.2, 2, 3.2, wall, 0);
-        const roof = new THREE.Mesh(new THREE.ConeGeometry(2.6, 1.6, 4), this._mat(new THREE.Color(theme.ground).getHex()));
-        roof.position.y = 2.8;
-        roof.rotation.y = Math.PI / 4;
-        g.add(roof);
-        break;
-      }
-      case 'farm': {
-        const field = new THREE.Mesh(new THREE.BoxGeometry(5.4, 0.25, 5.4), this._mat(0x69a64a, { roughness: 1 }));
-        field.position.y = 0.12;
-        g.add(field);
-        for (let i = -2; i <= 2; i++) {
-          const row = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.55, 5), this._mat(0x9bd46a, { roughness: 1 }));
-          row.position.set(i * 1.05, 0.5, 0);
-          g.add(row);
-        }
-        box(1.4, 1.4, 1.4, wall, 0).position.x = 3.4;
-        break;
-      }
-      case 'sawmill': {
-        box(3.6, 2.2, 2.6, wall, 0);
-        const blade = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 0.14, 16), this._mat(0xd8dde4, { metalness: 0.8, roughness: 0.3 }));
-        blade.rotation.z = Math.PI / 2;
-        blade.position.set(2.1, 1.6, 0);
-        blade.name = 'spin';
-        g.add(blade);
-        for (let i = 0; i < 3; i++) {
-          const log = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 2.4, 8), this._mat(0x8a5a2b, { roughness: 1 }));
-          log.rotation.z = Math.PI / 2;
-          log.position.set(-2.6, 0.4 + i * 0.3, -1 + i * 0.7);
-          g.add(log);
-        }
-        break;
-      }
-      case 'mine': {
-        const hill = new THREE.Mesh(new THREE.ConeGeometry(2.6, 2.2, 7), this._mat(0x6b6258, { flat: true, roughness: 1 }));
-        hill.position.set(-1.4, 1.1, 0);
-        g.add(hill);
-        box(2.2, 1.6, 2.2, dark, 0).position.x = 1.8;
-        const rail = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.16, 0.9), this._mat(0x8a8f98, { metalness: 0.7 }));
-        rail.position.set(0, 0.5, 1.8);
-        rail.rotation.z = -0.12;
-        g.add(rail);
-        const cart = new THREE.Mesh(new THREE.BoxGeometry(1, 0.7, 0.9), glow);
-        cart.position.set(0, 1.05, 1.8);
-        cart.name = 'cart';
-        g.add(cart);
-        break;
-      }
-      case 'plant': {
-        cyl(1.9, 2.2, 2.4, dark, 0, 14);
-        const core = new THREE.Mesh(new THREE.SphereGeometry(1.1, 14, 12), glow);
-        core.position.y = 3.1;
-        core.name = 'pulse';
-        g.add(core);
-        for (let i = 0; i < 3; i++) {
-          const a = (i / 3) * Math.PI * 2;
-          const pole = new THREE.Mesh(new THREE.BoxGeometry(0.2, 3.6, 0.2), dark);
-          pole.position.set(Math.cos(a) * 2.4, 1.8, Math.sin(a) * 2.4);
-          g.add(pole);
-        }
-        break;
-      }
-      case 'barracks': {
-        box(4, 2, 3, wall, 0);
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 3.4, 6), dark);
-        pole.position.set(1.6, 3.6, 1.2);
-        g.add(pole);
-        const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.9), this._mat(0xff5a5a, { emissive: 0x661111 }));
-        flag.position.set(2.4, 4.4, 1.2);
-        g.add(flag);
-        break;
-      }
-      case 'turret': {
-        cyl(1.2, 1.5, 0.9, dark, 0, 10);
-        const head = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1, 1.5), wall);
-        head.position.y = 1.4;
-        head.name = 'turretHead';
-        g.add(head);
-        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 2.4, 8), this._mat(0xb9c0c9, { metalness: 0.8 }));
-        barrel.rotation.x = Math.PI / 2;
-        barrel.position.set(0, 1.5, 1.5);
-        head.add(barrel);
-        barrel.position.set(0, 0.1, 1.4);
-        break;
-      }
-      case 'workshop': {
-        box(4.4, 2.4, 3.2, wall, 0);
-        const chimney = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.52, 3.2, 10), dark);
-        chimney.position.set(1.5, 3.9, -0.8);
-        g.add(chimney);
-        const gear = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.22, 8, 16), this._mat(0xd8b25a, { metalness: 0.7 }));
-        gear.position.set(-2.4, 1.6, 1.5);
-        gear.name = 'spin';
-        g.add(gear);
-        break;
-      }
-      case 'lab': {
-        box(3.8, 1.8, 3.8, wall, 0);
-        const dome = new THREE.Mesh(new THREE.SphereGeometry(1.9, 18, 12, 0, Math.PI * 2, 0, Math.PI / 2),
-          this._mat(0x9fd8ff, { transparent: true, opacity: 0.55, emissive: 0x224466 }));
-        dome.position.y = 1.8;
-        g.add(dome);
-        const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 3, 6), dark);
-        ant.position.set(1.4, 3.6, 1.4);
-        g.add(ant);
-        break;
-      }
-      case 'spaceport': {
-        cyl(4.2, 4.4, 0.4, this._mat(0x4a5158, { metalness: 0.5 }), 0, 24);
-        const rocket = new THREE.Mesh(new THREE.ConeGeometry(1, 4.4, 12), this._mat(0xe6ebf2, { metalness: 0.4, roughness: 0.35 }));
-        rocket.position.y = 2.6;
-        g.add(rocket);
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1.6, 12), this._mat(0xd0d6dd, { metalness: 0.4 }));
-        body.position.y = 1.2;
-        g.add(body);
-        const flame = new THREE.Mesh(new THREE.ConeGeometry(0.8, 1.6, 10), glow);
-        flame.rotation.x = Math.PI;
-        flame.position.y = 0.4;
-        flame.name = 'pulse';
-        g.add(flame);
-        const tower = new THREE.Mesh(new THREE.BoxGeometry(0.5, 5, 0.5), dark);
-        tower.position.set(2.6, 2.5, 0);
-        g.add(tower);
-        break;
-      }
-      default:
-        box(2, 2, 2, wall, 0);
+      mats.push(remember(mesh.material));
     }
-
-    g.position.set(building.x, heightAt(building.x, building.z), building.z);
-    const entry = { group: g, progress: -1, hp: -1, spin: null, pulse: null, cart: null, turretHead: null };
-    g.traverse((o) => {
-      if (o.name === 'spin') entry.spin = o;
-      if (o.name === 'pulse') entry.pulse = o;
-      if (o.name === 'cart') entry.cart = o;
-      if (o.name === 'turretHead') entry.turretHead = o;
-    });
+    const parts = [];
+    const byName = new Map();
+    for (const p of built.parts) {
+      const mesh = new THREE.Mesh(p.geo, p.mat.clone());
+      mesh.position.set(p.x, p.y, p.z);
+      mesh.rotation.set(p.rx, p.ry, p.rz);
+      mesh.scale.set(p.sx, p.sy, p.sz);
+      if (p.parent && byName.has(p.parent)) byName.get(p.parent).add(mesh);
+      else g.add(mesh);
+      mats.push(remember(mesh.material));
+      const entry = {
+        mesh, name: p.name, speed: p.speed, amp: p.amp, axis: p.axis || 'y',
+        baseScale: new THREE.Vector3(p.sx, p.sy, p.sz),
+        basePos: new THREE.Vector3(p.x, p.y, p.z),
+      };
+      parts.push(entry);
+      if (p.name !== 'child') byName.set(p.name, mesh);
+    }
+    g.position.set(building.x, groundAt(building.x, building.z), building.z);
+    // Cada edificio gira un poco: nada de urbanismo de cuadrícula perfecta
+    g.rotation.y = ((building.uid * 37) % 100) / 100 * 0.5 - 0.25;
+    const entry = {
+      group: g, mats, parts, progress: -1, hp: -1, height: built.height,
+      spin: parts.filter(p => p.name === 'spin'),
+      head: parts.filter(p => p.name === 'turretHead'),
+      pulse: parts.filter(p => p.name === 'pulse'),
+      cart: parts.filter(p => p.name === 'cart'),
+      flag: parts.filter(p => p.name === 'flag'),
+      blink: parts.filter(p => p.name === 'blink'),
+    };
     return entry;
   }
 
   _makeUnitMesh(unit) {
-    const def = UNIT_TYPES[unit.role] || UNIT_TYPES.citizen;
-    const g = new THREE.Group();
-    const bodyMat = this._mat(def.color, { roughness: 0.6 });
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.62, 4, 8), bodyMat);
-    body.position.y = 0.72;
-    g.add(body);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), this._mat(0xf2d3b0, { roughness: 0.8 }));
-    head.position.y = 1.36;
-    g.add(head);
-    if (unit.role === 'guard') {
-      const shield = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.7, 0.6), this._mat(0xffd166, { metalness: 0.5 }));
-      shield.position.set(0.36, 0.85, 0);
-      g.add(shield);
-    }
-    if (unit.role === 'builder') {
-      const hat = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.24, 8), this._mat(0xffc14d));
-      hat.position.y = 1.62;
-      g.add(hat);
-    }
-    g.position.set(unit.x, heightAt(unit.x, unit.z), unit.z);
-    return { group: g, role: unit.role, body };
+    const look = citizenLook(unit.uid, unit.role);
+    const built = buildCitizen(this.assets, {
+      role: unit.role, lowres: this.assets.lowres,
+      skin: look.skin, hair: look.hair, tunic: look.tunic, scale: look.scale,
+    });
+    const entry = {
+      group: built.group, body: built.body, armL: built.armL, armR: built.armR,
+      legL: built.legL, legR: built.legR, carry: built.carry,
+      role: unit.role, height: built.height * look.scale, look,
+      lastX: unit.x, lastZ: unit.z, speed01: 0,
+    };
+    return entry;
   }
 
   _makeNodeMesh(node) {
+    const theme = planetCiv(this.planet.config.id);
+    const built = node.kind === 'forest'
+      ? buildForestNode(this.assets, theme)
+      : node.kind === 'crystal'
+        ? buildCrystalNode(this.assets, theme)
+        : buildVeinNode(this.assets, theme, node.resource);
     const g = new THREE.Group();
-    if (node.kind === 'forest') {
-      const n = 4;
-      for (let i = 0; i < n; i++) {
-        const a = (i / n) * Math.PI * 2 + node.uid;
-        const r = 1.1 + (i % 2) * 0.7;
-        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 1.2, 6), this._mat(0x7a4f28, { roughness: 1 }));
-        trunk.position.set(Math.cos(a) * r, 0.6, Math.sin(a) * r);
-        g.add(trunk);
-        const leaves = new THREE.Mesh(new THREE.ConeGeometry(0.95, 2.1, 7), this._mat(0x3f9c4a, { roughness: 1 }));
-        leaves.position.set(Math.cos(a) * r, 2.1, Math.sin(a) * r);
-        g.add(leaves);
-      }
-    } else if (node.kind === 'crystal') {
-      for (let i = 0; i < 4; i++) {
-        const a = (i / 4) * Math.PI * 2 + node.uid;
-        const r = 0.9 + (i % 2) * 0.8;
-        const c = new THREE.Mesh(new THREE.OctahedronGeometry(0.8 + (i % 2) * 0.35, 0),
-          this._mat(0xff5ae0, { emissive: 0x550044, emissiveIntensity: 1.2, flat: true }));
-        c.position.set(Math.cos(a) * r, 0.8, Math.sin(a) * r);
-        c.rotation.y = a;
-        g.add(c);
-      }
-    } else {
-      const color = node.resource === 'metal' ? 0x8d949c : node.resource === 'stone' ? 0x7d7365 : 0x8d949c;
-      for (let i = 0; i < 4; i++) {
-        const a = (i / 4) * Math.PI * 2 + node.uid * 0.7;
-        const r = 0.8 + (i % 2) * 0.9;
-        const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.75 + (i % 3) * 0.25, 0), this._mat(color, { flat: true, roughness: 1 }));
-        rock.position.set(Math.cos(a) * r, 0.5, Math.sin(a) * r);
-        rock.rotation.set(a, a * 0.5, 0);
-        g.add(rock);
+    if (built.solid) {
+      g.add(new THREE.Mesh(built.solid, this.assets.solidMaterial().clone()));
+    }
+    const parts = [];
+    for (const p of built.parts) {
+      const mesh = new THREE.Mesh(p.geo, p.mat.clone());
+      mesh.position.set(p.x, p.y, p.z);
+      mesh.rotation.set(p.rx, p.ry, p.rz);
+      mesh.scale.set(p.sx, p.sy, p.sz);
+      g.add(mesh);
+      if (p.name === 'pulse') {
+        parts.push({ mesh, name: 'pulse', baseScale: new THREE.Vector3(p.sx, p.sy, p.sz) });
       }
     }
-    g.position.set(node.x, heightAt(node.x, node.z), node.z);
-    return { group: g, amount: -1 };
+    g.position.set(node.x, groundAt(node.x, node.z), node.z);
+    return { group: g, amount: -1, parts };
   }
 
   // ------------------------------------------------------------------ Sincro
@@ -578,20 +608,19 @@ export class CivMode {
         const done = p >= 0.999;
         m.group.scale.setScalar(done ? 1 : 0.35 + p * 0.65);
         const op = done ? 1 : 0.35 + p * 0.65;
-        m.group.traverse((o) => {
-          if (!o.isMesh || !o.material) return;
-          const base = o.material.userData.baseOpacity ?? 1;
-          o.material.opacity = base * op;
-          o.material.transparent = o.material.opacity < 1;
-        });
+        for (const mat of m.mats) {
+          if (!mat) continue;
+          mat.opacity = (mat.userData.baseOpacity ?? 1) * op;
+          mat.transparent = mat.opacity < 1;
+        }
       }
       if (m.hp !== b.hp) {
         m.hp = b.hp;
         const damaged = b.hp < 60;
-        m.group.traverse((o) => {
-          if (!o.isMesh || !o.material || !o.material.emissive) return;
-          o.material.emissive.setHex(damaged ? 0x551111 : (o.material.userData.baseEmissive ?? 0x000000));
-        });
+        for (const mat of m.mats) {
+          if (!mat || !mat.emissive) continue;
+          mat.emissive.setHex(damaged ? 0x551111 : (mat.userData.baseEmissive ?? 0x000000));
+        }
       }
     }
     for (const [uid, m] of Array.from(this.bMeshes)) {
@@ -617,10 +646,16 @@ export class CivMode {
         this.uMeshes.set(u.uid, m);
         this.root.add(m.group);
       }
-      m.group.position.set(u.x, heightAt(u.x, u.z), u.z);
+      m.group.position.set(u.x, groundAt(u.x, u.z), u.z);
       if (u.facing !== undefined) m.group.rotation.y = u.facing;
-      // pequeño salto al caminar
-      m.body.position.y = 0.72 + Math.abs(Math.sin(this.time * 6 + u.uid)) * 0.06;
+      const moved = Math.hypot(u.x - m.lastX, u.z - m.lastZ);
+      m.lastX = u.x;
+      m.lastZ = u.z;
+      const speed = (UNIT_TYPES[u.role] || UNIT_TYPES.citizen).speed;
+      // velocidad normalizada (suavizada) para el ciclo de andar
+      const target = Math.min(1, moved / Math.max(0.0001, speed * 0.05));
+      m.speed01 += (target - m.speed01) * 0.25;
+      if (m.carry) m.carry.visible = u.carry > 0;
     }
     for (const [uid, m] of Array.from(this.uMeshes)) {
       if (seenU.has(uid)) continue;
@@ -671,9 +706,11 @@ export class CivMode {
       this._pinch.dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
       this._pinch.cx = (pts[0].x + pts[1].x) / 2;
       this._pinch.cy = (pts[0].y + pts[1].y) / 2;
+      this._endBox();
       return;
     }
     this._pointer = { active: true, id: e.pointerId, x: e.clientX, y: e.clientY, moved: 0, t0: performance.now() };
+    if (this.boxMode && !this.pendingType) this._startBox(e.clientX, e.clientY);
   }
 
   _onPointerMove(e) {
@@ -702,6 +739,10 @@ export class CivMode {
     this._pointer.x = e.clientX;
     this._pointer.y = e.clientY;
     this._pointer.moved += Math.abs(dx) + Math.abs(dy);
+    if (this._box) {
+      this._updateBox(e.clientX, e.clientY);
+      return;
+    }
     // Arrastrar: girar la cámara alrededor de la colonia
     this.view.yaw -= dx * 0.006;
     this.view.pitch = THREE.MathUtils.clamp(this.view.pitch + dy * 0.004, 0.22, 1.35);
@@ -714,15 +755,14 @@ export class CivMode {
     if (!this._pointer.active || this._pointer.id !== e.pointerId) return;
     const wasTap = this._pointer.moved < 12 && performance.now() - this._pointer.t0 < 450;
     const at = { x: this._pointer.x, y: this._pointer.y };
+    const box = this._box;
     this._pointer.active = false;
-    if (!wasTap) return;
-    const tile = this.pickTile(at.x, at.y);
-    if (tile) {
-      this.selectedTile = tile;
-      this._updateMarker();
-      if (this.pendingType) this.confirmBuild();
-      else if (this.onEvent) this.onEvent('select', tile);
+    if (box) {
+      this._finishBox(at.x, at.y);
+      return;
     }
+    if (!wasTap) return;
+    this._onTap(at.x, at.y);
   }
 
   _onWheel(e) {
@@ -732,6 +772,243 @@ export class CivMode {
     if (e.deltaMode === 1) dy *= 33;
     else if (e.deltaMode === 2) dy *= 400;
     this.view.dist = THREE.MathUtils.clamp(this.view.dist * (1 + dy * 0.0012), 18, 150);
+  }
+
+  /** Un toque: civil -> edificio -> yacimiento -> terreno. */
+  _onTap(x, y) {
+    const unit = this.pickUnit(x, y);
+    if (unit !== null) {
+      this.toggleUnit(unit);
+      return;
+    }
+    const building = this.pickBuilding(x, y);
+    if (building !== null) {
+      this.selectBuilding(building);
+      return;
+    }
+    const node = this.pickNode(x, y);
+    if (node !== null) {
+      const res = this._nodeResource(node);
+      if (res && this.selection.size) {
+        const r = this.colony.command(Array.from(this.selection), res);
+        if (this.onEvent) this.onEvent('command', r);
+        return;
+      }
+      if (res) {
+        this.selectedTile = null;
+        if (this.onEvent) this.onEvent('node', { node, resource: res });
+        return;
+      }
+    }
+    const tile = this.pickTile(x, y);
+    if (tile) {
+      this.selectedTile = tile;
+      this._updateMarker();
+      if (this.pendingType) this.confirmBuild();
+      else if (this.onEvent) this.onEvent('select', tile);
+    }
+  }
+
+  /** Recurso que se puede sacar de un yacimiento. */
+  _nodeResource(node) {
+    if (node.kind === 'forest') return 'wood';
+    if (node.kind === 'crystal') return 'crystal';
+    return node.resource;
+  }
+
+  // --------------------------------------------------------------- Selección
+
+  /** Proyección a pantalla de un punto local de la colonia (px). */
+  _project(lx, ly, lz) {
+    if (!this.root) return null;
+    _v.set(lx, ly, lz);
+    this.root.localToWorld(_v);
+    _v.project(this.camera);
+    if (_v.z > 1) return null;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    return {
+      x: (_v.x * 0.5 + 0.5) * rect.width + rect.left,
+      y: (-_v.y * 0.5 + 0.5) * rect.height + rect.top,
+    };
+  }
+
+  /** Civil bajo el punto (en píxeles), o null. */
+  pickUnit(clientX, clientY, radiusPx = 38) {
+    if (!this.colony || !this.root) return null;
+    this.root.updateMatrixWorld(true);
+    let best = null;
+    let bestD = radiusPx;
+    for (const u of this.colony.units) {
+      const m = this.uMeshes.get(u.uid);
+      const h = m ? m.height : 1.6;
+      const p = this._project(u.x, h * 0.55, u.z);
+      if (!p) continue;
+      const d = Math.hypot(p.x - clientX, p.y - clientY);
+      if (d < bestD) { bestD = d; best = u.uid; }
+    }
+    return best;
+  }
+
+  /** Edificio bajo el punto (en píxeles), o null. */
+  pickBuilding(clientX, clientY, radiusPx = 46) {
+    if (!this.colony || !this.root) return null;
+    this.root.updateMatrixWorld(true);
+    let best = null;
+    let bestD = radiusPx;
+    for (const b of this.colony.buildings) {
+      const m = this.bMeshes.get(b.uid);
+      const h = m ? Math.max(1.5, m.height * 0.5) : 2;
+      const p = this._project(b.x, h, b.z);
+      if (!p) continue;
+      const d = Math.hypot(p.x - clientX, p.y - clientY);
+      if (d < bestD) { bestD = d; best = b.uid; }
+    }
+    return best;
+  }
+
+  /** Yacimiento bajo el punto (en píxeles), o null. */
+  pickNode(clientX, clientY, radiusPx = 44) {
+    if (!this.colony || !this.root) return null;
+    this.root.updateMatrixWorld(true);
+    let best = null;
+    let bestD = radiusPx;
+    for (const n of this.colony.nodes) {
+      const p = this._project(n.x, 1.0, n.z);
+      if (!p) continue;
+      const d = Math.hypot(p.x - clientX, p.y - clientY);
+      if (d < bestD) { bestD = d; best = n; }
+    }
+    return best;
+  }
+
+  toggleUnit(uid) {
+    if (this.selection.has(uid)) this.selection.delete(uid);
+    else this.selection.add(uid);
+    this.selectedBuilding = null;
+    if (this.onEvent) this.onEvent('select-units', this.selectedUnits());
+    return Array.from(this.selection);
+  }
+
+  selectAllUnits() {
+    this.selection.clear();
+    if (this.colony) for (const u of this.colony.units) this.selection.add(u.uid);
+    this.selectedBuilding = null;
+    if (this.onEvent) this.onEvent('select-units', this.selectedUnits());
+    return this.selection.size;
+  }
+
+  clearSelection() {
+    this.selection.clear();
+    this.selectedBuilding = null;
+    if (this.onEvent) this.onEvent('select-units', []);
+  }
+
+  selectedUnits() {
+    if (!this.colony) return [];
+    return this.colony.units.filter(u => this.selection.has(u.uid));
+  }
+
+  selectBuilding(uid) {
+    this.selectedBuilding = uid === this.selectedBuilding ? null : uid;
+    this.selection.clear();
+    const b = this.colony ? this.colony.buildings.find(x => x.uid === uid) : null;
+    if (b) { this.view.fx = b.x; this.view.fz = b.z; }
+    if (this.onEvent) this.onEvent('select-building', this.selectedBuildingInfo());
+    return this.selectedBuilding;
+  }
+
+  selectedBuildingInfo() {
+    if (!this.colony || !this.selectedBuilding) return null;
+    const b = this.colony.buildings.find(x => x.uid === this.selectedBuilding);
+    if (!b) return null;
+    const def = BUILDINGS[b.type];
+    return {
+      uid: b.uid, type: b.type, def,
+      hp: Math.round(b.hp), progress: b.progress,
+      workers: b.workers || 0,
+      manual: this.colony.units.filter(u => u.manual && u.task && u.task.kind === 'building' && u.task.uid === b.uid).length,
+    };
+  }
+
+  /** Manda la selección a recolectar un recurso. */
+  commandSelected(resource) {
+    if (!this.colony) return { ok: false, reason: 'No hay colonia' };
+    if (!this.selection.size) return { ok: false, reason: 'Selecciona civiles primero' };
+    const r = this.colony.command(Array.from(this.selection), resource);
+    if (this.onEvent) this.onEvent('command', r);
+    return r;
+  }
+
+  /** Devuelve la selección al reparto automático. */
+  releaseSelected() {
+    if (!this.colony) return { ok: false, reason: 'No hay colonia' };
+    const r = this.colony.release(Array.from(this.selection));
+    if (this.onEvent) this.onEvent('command', r);
+    return r;
+  }
+
+  setBoxMode(on) {
+    this.boxMode = !!on;
+    if (!this.boxMode) this._endBox();
+    if (this.onEvent) this.onEvent('box-mode', this.boxMode);
+    return this.boxMode;
+  }
+
+  // -------------------------------------------------- Selección con recuadro
+
+  _startBox(x, y) {
+    this._box = { x0: x, y0: y, x1: x, y1: y };
+    if (this._boxEl) {
+      this._boxEl.style.display = 'block';
+      this._updateBoxEl();
+    }
+  }
+
+  _updateBox(x, y) {
+    if (!this._box) return;
+    this._box.x1 = x;
+    this._box.y1 = y;
+    this._updateBoxEl();
+  }
+
+  _updateBoxEl() {
+    if (!this._boxEl || !this._box) return;
+    const x = Math.min(this._box.x0, this._box.x1);
+    const y = Math.min(this._box.y0, this._box.y1);
+    const w = Math.abs(this._box.x1 - this._box.x0);
+    const h = Math.abs(this._box.y1 - this._box.y0);
+    this._boxEl.style.left = `${x}px`;
+    this._boxEl.style.top = `${y}px`;
+    this._boxEl.style.width = `${w}px`;
+    this._boxEl.style.height = `${h}px`;
+  }
+
+  _finishBox(x, y) {
+    const box = this._box;
+    this._box = null;
+    this._hideBox();
+    if (!box) return;
+    const x0 = Math.min(box.x0, x);
+    const x1 = Math.max(box.x0, x);
+    const y0 = Math.min(box.y0, y);
+    const y1 = Math.max(box.y0, y);
+    if (x1 - x0 < 8 && y1 - y0 < 8) { this._onTap(x, y); return; }
+    this.selection.clear();
+    this.selectedBuilding = null;
+    for (const u of this.colony ? this.colony.units : []) {
+      const m = this.uMeshes.get(u.uid);
+      const h = m ? m.height : 1.6;
+      const p = this._project(u.x, h * 0.55, u.z);
+      if (!p) continue;
+      if (p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1) this.selection.add(u.uid);
+    }
+    if (this.onEvent) this.onEvent('select-units', this.selectedUnits());
+  }
+
+  _endBox() { this._box = null; this._hideBox(); }
+
+  _hideBox() {
+    if (this._boxEl) this._boxEl.style.display = 'none';
   }
 
   /** Desplaza el foco con píxeles de pantalla (dos dedos / teclado). */
@@ -744,7 +1021,6 @@ export class CivMode {
   _pan(right, forward) {
     const s = Math.sin(this.view.yaw);
     const c = Math.cos(this.view.yaw);
-    // right = (cos, -sin), forward = (-sin, -cos) en el plano XZ local
     this.view.fx += (c * right - s * forward);
     this.view.fz += (-s * right - c * forward);
     const lim = CITY_RADIUS + 14;
@@ -781,7 +1057,7 @@ export class CivMode {
     if (this.ghost) this.ghost.visible = show && !!this.pendingType;
     if (!show) return;
     const p = tileToLocal(this.selectedTile.tx, this.selectedTile.tz);
-    const y = heightAt(p.x, p.z) + 0.1;
+    const y = groundAt(p.x, p.z) + 0.1;
     this.marker.position.set(p.x, y, p.z);
     if (this.ghost) this.ghost.position.set(p.x, y + 1.2, p.z);
     const occupied = !!(this.colony && this.colony.buildingAt(this.selectedTile.tx, this.selectedTile.tz));
@@ -791,7 +1067,12 @@ export class CivMode {
   }
 
   setPendingBuild(type) {
-    if (!type) { this.pendingType = null; if (this.grid) this.grid.visible = false; this._updateMarker(); return null; }
+    if (!type) {
+      this.pendingType = null;
+      if (this.grid) this.grid.visible = false;
+      this._updateMarker();
+      return null;
+    }
     const def = BUILDINGS[type];
     if (!def || !this.colony) return null;
     this.pendingType = type;
@@ -827,7 +1108,6 @@ export class CivMode {
     if (!this.active) return;
     this.time += delta;
     try {
-      // Teclado: WASD/flechas mueven el foco, Q/E acercan
       if (input) {
         const k = 26 * delta * (this.view.dist / 56);
         if (input.moveY) this._pan(0, input.moveY * k);
@@ -839,25 +1119,97 @@ export class CivMode {
       this._updateCamera(delta);
       this._sync();
       this._animate(delta);
+      if (this.sky) this.sky.update(delta);
+      const tut = this.tutorial;
+      if (tut && tut.colony === this.colony && tut.update() && this.onEvent) {
+        this.onEvent('tutorial', tut.step);
+      }
     } catch (e) {
       if (!this._errorLogged) { console.error('[Civ] update error:', e); this._errorLogged = true; }
     }
   }
 
   _animate(delta) {
+    const t = this.time;
     for (const m of this.bMeshes.values()) {
-      if (m.spin) m.spin.rotation.y += delta * 2.2;
-      if (m.pulse) {
-        const s = 1 + Math.sin(this.time * 3) * 0.12;
-        m.pulse.scale.setScalar(s);
+      for (const p of m.spin) {
+        const d = delta * 2.2 * (p.speed || 1);
+        if (p.axis === 'x') p.mesh.rotation.x += d;
+        else if (p.axis === 'z') p.mesh.rotation.z += d;
+        else p.mesh.rotation.y += d;
       }
-      if (m.cart) m.cart.position.x = Math.sin(this.time * 0.8) * 1.8;
-      if (m.turretHead) m.turretHead.rotation.y = this.view.yaw * -0.4 + Math.sin(this.time * 0.3) * 0.4;
+      for (const p of m.head) {
+        // El cabezal de la torreta barre el horizonte mirando hacia la cámara
+        p.mesh.rotation.y = -this.view.yaw + Math.sin(t * 0.3 + p.mesh.id) * 0.35;
+      }
+      for (const p of m.pulse) {
+        const s = 1 + Math.sin(t * 3 + p.mesh.id) * 0.12;
+        p.mesh.scale.copy(p.baseScale).multiplyScalar(s);
+      }
+      for (const p of m.cart) {
+        p.mesh.position.x = p.basePos.x + Math.sin(t * 0.8) * (p.amp || 1.8);
+      }
+      for (const p of m.flag) {
+        p.mesh.rotation.y = Math.sin(t * 2.6 + p.mesh.id) * 0.22;
+        p.mesh.scale.set(p.baseScale.x, p.baseScale.y * (1 + Math.sin(t * 5 + p.mesh.id) * 0.08), p.baseScale.z);
+      }
+      for (const p of m.blink) {
+        const mat = p.mesh.material;
+        if (!mat) continue;
+        const on = Math.sin(t * 4 + p.mesh.id) > 0;
+        mat.opacity = on ? 1 : 0.18;
+        mat.transparent = true;
+        if (mat.emissiveIntensity !== undefined) mat.emissiveIntensity = on ? 2 : 0.4;
+      }
+    }
+    for (const m of this.nMeshes.values()) {
+      for (const p of m.parts) {
+        const s = 1 + Math.sin(t * 2.2 + p.mesh.id) * 0.14;
+        p.mesh.scale.copy(p.baseScale).multiplyScalar(s);
+      }
+    }
+    for (const m of this.uMeshes.values()) {
+      animateCitizen(m, delta, t, m.speed01);
     }
     if (this.marker && this.marker.visible) {
-      const s = 1 + Math.sin(this.time * 4) * 0.06;
+      const s = 1 + Math.sin(t * 4) * 0.06;
       this.marker.scale.setScalar(s);
     }
+    this._updateSelRing();
+    this._updateBlobs();
+  }
+
+  /** Aro dorado bajo el edificio seleccionado. */
+  _updateSelRing() {
+    if (!this.selRing || !this.colony) return;
+    const b = this.selectedBuilding
+      ? this.colony.buildings.find(x => x.uid === this.selectedBuilding)
+      : null;
+    this.selRing.visible = !!b;
+    if (!b) return;
+    this.selRing.position.set(b.x, groundAt(b.x, b.z) + 0.14, b.z);
+    const s = 1 + Math.sin(this.time * 3.5) * 0.05;
+    this.selRing.scale.setScalar(s);
+  }
+
+  /** Coloca las sombras de contacto bajo cada civil (1 draw call). */
+  _updateBlobs() {
+    if (!this.blobs) return;
+    let n = 0;
+    for (const m of this.uMeshes.values()) {
+      if (n >= MAX_BLOBS) break;
+      const g = m.group;
+      const s = (m.look && m.look.scale) || 1;
+      _pos.set(g.position.x, groundAt(g.position.x, g.position.z) + 0.06, g.position.z);
+      _euler.set(-Math.PI / 2, 0, 0);
+      _quat.setFromEuler(_euler);
+      _scale.setScalar(1.05 * s);
+      _mat4.compose(_pos, _quat, _scale);
+      this.blobs.setMatrixAt(n, _mat4);
+      n++;
+    }
+    this.blobs.count = n;
+    this.blobs.instanceMatrix.needsUpdate = true;
   }
 
   _updateCamera(delta) {
@@ -867,7 +1219,7 @@ export class CivMode {
     const cp = Math.cos(pitch);
     _v.set(fx + Math.sin(yaw) * dist * cp, dist * Math.sin(pitch), fz + Math.cos(yaw) * dist * cp);
     this.camera.position.copy(this.root.localToWorld(_v));
-    _v2.set(fx, heightAt(fx, fz) + 2.2, fz);
+    _v2.set(fx, groundAt(fx, fz) + 2.2, fz);
     this.camera.lookAt(this.root.localToWorld(_v2));
     this.camera.updateMatrixWorld(true);
   }

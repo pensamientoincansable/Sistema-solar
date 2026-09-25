@@ -2,11 +2,16 @@
  * CivUI - Panel del modo "Civilizar".
  *
  * Crea su propio DOM (barra superior de recursos, lista de edificios,
- * deslizadores de reparto de ciudadanos al estilo Rise of Nations y registro de
- * sucesos) para no duplicar decenas de IDs en index.html. Funciona igual en PC
- * y en táctil: en pantallas bajas los paneles se convierten en tiras.
+ * deslizadores de reparto de ciudadanos al estilo Rise of Nations, barra de
+ * órdenes para los civiles seleccionados, panel del ayuntamiento, tutorial del
+ * primer planeta y registro de sucesos) para no duplicar decenas de IDs en
+ * index.html. Funciona igual en PC y en táctil: en pantallas bajas los paneles
+ * se convierten en tiras.
  */
-import { BUILDINGS, BUILD_ORDER, ERAS, PRIORITIES, CIV_BAR } from '../civ/CivConfig.js';
+import {
+  BUILDINGS, BUILD_ORDER, ERAS, PRIORITIES, CIV_BAR, GATHER_TASKS, GATHER_BY_RESOURCE,
+  ROLE_PRIORITY, BALANCE,
+} from '../civ/CivConfig.js';
 import { MATERIALS } from '../config/PlanetsConfig.js';
 
 const RES = (id) => MATERIALS[id] || { icon: '•', name: id, color: '#fff' };
@@ -21,6 +26,7 @@ export class CivUI {
     this._cache = {};
     this._timer = 0;
     this._logLines = [];
+    this._panelDirty = true;
     try { this._build(); } catch (e) { console.error('[CivUI] init error:', e); }
   }
 
@@ -55,9 +61,45 @@ export class CivUI {
         <div class="civ-units" id="civ-units"></div>
       </div>
 
+      <div class="civ-dock" id="civ-dock">
+        <div class="civ-panel civ-tut" id="civ-tut">
+          <div class="civ-tut-bar">
+            <span class="civ-tut-icon"></span>
+            <b class="civ-tut-title"></b>
+            <span class="civ-tut-progress"></span>
+            <button class="civ-x" data-act="tut-close" type="button" title="Cerrar la guía">✕</button>
+          </div>
+          <p class="civ-tut-text"></p>
+          <div class="civ-tut-foot">
+            <button class="civ-btn primary" data-act="tut-next" type="button">Entendido ▸</button>
+            <span class="civ-tut-note"></span>
+          </div>
+        </div>
+
+        <div class="civ-panel civ-town" id="civ-town">
+          <div class="civ-town-head">
+            <span class="civ-town-icon"></span>
+            <div class="civ-town-title"><b class="civ-town-name"></b><small class="civ-town-sub"></small></div>
+            <button class="civ-x" data-act="close-panel" type="button" title="Cerrar">✕</button>
+          </div>
+          <div class="civ-town-body" id="civ-town-body"></div>
+        </div>
+
+        <div class="civ-panel civ-sel" id="civ-sel">
+          <span class="civ-sel-count" id="civ-sel-count"></span>
+          <div class="civ-orders" id="civ-orders"></div>
+          <span class="civ-sel-tools">
+            <button class="civ-btn" data-act="selectall" type="button" title="Seleccionar todos los civiles">☑️ Todos</button>
+            <button class="civ-btn" data-act="release" type="button" title="Volver al reparto automático">↩️ Auto</button>
+          </span>
+        </div>
+      </div>
+
       <div class="civ-bottom">
         <div class="civ-log" id="civ-log"></div>
         <div class="civ-actions">
+          <button class="civ-btn" data-act="box" type="button" title="Arrastrar un recuadro para seleccionar varios civiles"><span>▭</span> Recuadro</button>
+          <button class="civ-btn" data-act="guide" type="button"><span>📘</span> Guía</button>
           <button class="civ-btn" data-act="era" type="button"><span>⬆️</span> Avanzar de era</button>
           <button class="civ-btn" data-act="export" type="button"><span>🚀</span> Enviar a la órbita</button>
           <button class="civ-btn" data-act="center" type="button"><span>🎥</span> Centrar vista</button>
@@ -81,17 +123,46 @@ export class CivUI {
       units: root.querySelector('#civ-units'),
       log: root.querySelector('#civ-log'),
       hint: root.querySelector('#civ-hint'),
+      dock: root.querySelector('#civ-dock'),
+      tut: root.querySelector('#civ-tut'),
+      tutIcon: root.querySelector('.civ-tut-icon'),
+      tutTitle: root.querySelector('.civ-tut-title'),
+      tutProgress: root.querySelector('.civ-tut-progress'),
+      tutText: root.querySelector('.civ-tut-text'),
+      tutNote: root.querySelector('.civ-tut-note'),
+      town: root.querySelector('#civ-town'),
+      townIcon: root.querySelector('.civ-town-icon'),
+      townName: root.querySelector('.civ-town-name'),
+      townSub: root.querySelector('.civ-town-sub'),
+      townBody: root.querySelector('#civ-town-body'),
+      sel: root.querySelector('#civ-sel'),
+      selCount: root.querySelector('#civ-sel-count'),
+      orders: root.querySelector('#civ-orders'),
+      boxBtn: root.querySelector('.civ-btn[data-act="box"]'),
+      guideBtn: root.querySelector('.civ-btn[data-act="guide"]'),
     };
 
-    root.querySelectorAll('.civ-btn[data-act]').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        this._action(btn.dataset.act);
-      });
+    // Un solo oyente para todos los botones: los paneles se reescriben a menudo
+    // (innerHTML) y así no hay que volver a engancharlos cada vez.
+    root.addEventListener('click', (e) => {
+      const t = e.target;
+      const btn = t && t.closest ? t.closest('[data-act]') : null;
+      if (!btn || !root.contains(btn)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this._action(btn.dataset.act, btn);
     });
 
     this._renderBuildList();
     this._renderPriorities();
+    this._renderOrders();
+
+    // Los eventos de la escena (selección, órdenes, tutorial) alimentan el panel.
+    const prev = this.civ && this.civ.onEvent;
+    this.civ.onEvent = (kind, data) => {
+      try { this._onEvent(kind, data); } catch (e) { /* noop */ }
+      if (typeof prev === 'function') prev(kind, data);
+    };
   }
 
   // ------------------------------------------------------------- Listas base
@@ -144,13 +215,95 @@ export class CivUI {
     });
   }
 
-  // ------------------------------------------------------------------ Acciones
+  /** Botones de recolectar: uno por recurso que se puede explotar a mano. */
+  _renderOrders() {
+    this.els.orders.innerHTML = GATHER_TASKS.map((t) => `
+      <button class="civ-order" data-res="${t.resource}" type="button" title="Mandar a recolectar ${t.name}">
+        <span class="civ-order-icon">${t.icon}</span>
+        <i>${t.name}</i>
+      </button>`).join('');
+    this.els.orders.querySelectorAll('.civ-order').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this._order(btn.dataset.res);
+      });
+    });
+  }
 
-  _action(act) {
+  // --------------------------------------------------------------- Eventos
+
+  _onEvent(kind, data) {
+    if (kind === 'select-units' || kind === 'select-building' || kind === 'box-mode' || kind === 'tutorial') {
+      if (kind === 'tutorial') {
+        if (data) this.log(`✅ Guía superada · siguiente: ${data.icon} ${data.title}`, 'success');
+        else this.log('🎉 ¡Guía de construcción completada! Ya sabes hacer crecer la colonia', 'success');
+      }
+      this._panelDirty = true;
+      this.refresh(0, true);
+      return;
+    }
+    if (kind === 'command') {
+      if (data && data.ok) {
+        const t = GATHER_BY_RESOURCE[data.resource];
+        this.log(`${t ? t.icon : '📦'} ${data.count} ${data.count === 1 ? 'civil va' : 'civiles van'} a por ${t ? t.name : data.resource}`, 'success');
+      } else if (data && data.reason) {
+        this.log(`⚠️ ${data.reason}`, 'warn');
+      }
+      return;
+    }
+    if (kind === 'node') {
+      const t = data && data.resource ? GATHER_BY_RESOURCE[data.resource] : null;
+      if (t) this.log(`${t.icon} ${t.name}: selecciona civiles y toca el yacimiento (o usa la barra de órdenes)`, 'info');
+      return;
+    }
+    if (kind === 'built') this._panelDirty = true;
+  }
+
+  // ---------------------------------------------------------------- Acciones
+
+  _action(act, btn) {
     const c = this.civ.colony;
-    if (!c) return;
     if (act === 'exit') { if (this.hooks.onExit) this.hooks.onExit(); return; }
     if (act === 'center') { this.civ.resetView(); return; }
+    if (act === 'box') { this.civ.setBoxMode(!this.civ.boxMode); this.refresh(0, true); return; }
+    if (act === 'selectall') { this.civ.selectAllUnits(); this.refresh(0, true); return; }
+    if (act === 'release') {
+      const r = this.civ.releaseSelected();
+      if (!r.ok && r.reason) this.log(`⚠️ ${r.reason}`, 'warn');
+      this.refresh(0, true);
+      return;
+    }
+    if (act === 'guide') {
+      const t = this.civ.tutorial;
+      if (!t) { this.log('📘 La guía solo aparece en el primer planeta civilizado', 'info'); return; }
+      if (t.step) this.log(`📘 Guía: ${t.step.title}`, 'info');
+      this.refresh(0, true);
+      return;
+    }
+    if (act === 'tut-next') {
+      const t = this.civ.tutorial;
+      if (t) t.advance();
+      this.refresh(0, true);
+      return;
+    }
+    if (act === 'tut-close') {
+      const t = this.civ.tutorial;
+      if (t) t.dismiss();
+      this.refresh(0, true);
+      return;
+    }
+    if (act === 'close-panel') { this.civ.selectBuilding(this.civ.selectedBuilding); this.refresh(0, true); return; }
+    if (act === 'train') { this._train(); return; }
+    if (act === 'cancel-build') {
+      const b = this.civ.colony ? this.civ.colony.buildings.find(x => x.uid === this.civ.selectedBuilding) : null;
+      if (b) this.civ.colony.cancelBuild(b.uid);
+      this.civ.selectBuilding(b ? b.uid : this.civ.selectedBuilding);
+      this._panelDirty = true;
+      this.refresh(0, true);
+      return;
+    }
+    if (!c) return;
     if (act === 'era') {
       const r = c.advanceEra();
       if (this.hooks.onNotify) this.hooks.onNotify(r.ok ? `⬆️ ${ERAS[c.era].name}: ${ERAS[c.era].desc}` : r.reason, r.ok ? 'success' : 'danger');
@@ -164,7 +317,33 @@ export class CivUI {
     }
   }
 
-  // -------------------------------------------------------------------- Bucle
+  /** Manda la selección a recolectar un recurso concreto. */
+  _order(resource) {
+    const c = this.civ.colony;
+    if (!c) return;
+    if (!this.civ.selection || !this.civ.selection.size) {
+      const t = GATHER_BY_RESOURCE[resource];
+      this.log(`👆 Toca civiles para seleccionarlos antes de mandarlos a por ${t ? t.name : resource}`, 'warn');
+      this.civ.selectAllUnits();
+      this.log('☑️ Seleccionados todos los civiles: vuelve a pulsar la orden', 'info');
+      return;
+    }
+    const r = this.civ.commandSelected(resource);
+    if (!r.ok) this.log(`⚠️ ${r.reason}`, 'warn');
+    this.refresh(0, true);
+  }
+
+  /** Entrena un civil nuevo en el ayuntamiento. */
+  _train() {
+    const c = this.civ.colony;
+    if (!c) return;
+    const r = c.trainCitizen();
+    if (r.ok) this.log(`🏛️ Nuevo ${c.theme.singular} en camino… (${c.population}/${c.popCap})`, 'success');
+    else this.log(`⚠️ ${r.reason}`, 'warn');
+    this.refresh(0, true);
+  }
+
+  // ------------------------------------------------------------------ Bucle
 
   show() {
     if (!this.root) return;
@@ -261,7 +440,7 @@ export class CivUI {
     const unitHtml = roles.map((r) => {
       const n = counts[r] || 0;
       if (!n) return '';
-      const label = r === 'citizen' ? this.civ.colony.theme.singular : null;
+      const label = r === 'citizen' ? c.theme.singular : null;
       return `<span class="civ-unit">${UNIT_ICON[r]} ${label || UNIT_NAME[r]} <b>${n}</b></span>`;
     }).join('');
     this._setHTML('units', this.els.units, unitHtml || '<span class="muted">Sin ciudadanos</span>');
@@ -291,6 +470,104 @@ export class CivUI {
     }
     const expBtn = this.root.querySelector('.civ-btn[data-act="export"]');
     if (expBtn) expBtn.disabled = !c.hasSpaceport();
+
+    // Paneles flotantes: selección, edificio y tutorial
+    this._refreshSelection(c);
+    this._refreshTown(c);
+    this._refreshTutorial(c);
+    this._panelDirty = false;
+  }
+
+  /** Barra de órdenes: siempre visible, con las 6 formas de recolectar. */
+  _refreshSelection(c) {
+    const sel = this.civ.selectedUnits ? this.civ.selectedUnits() : [];
+    const n = sel.length;
+    this.els.sel.classList.toggle('empty', n === 0);
+    const manual = sel.filter(u => u.manual).length;
+    this._setHTML('selCount', this.els.selCount, n
+      ? `👥 <b>${n}</b> seleccionado${n === 1 ? '' : 's'}${manual ? ` · ${manual} con orden` : ''}`
+      : '👥 Toca un civil (o ▭ Recuadro) para dar órdenes');
+    const orders = this.els.orders.querySelectorAll('.civ-order');
+    orders.forEach((btn) => {
+      const res = btn.dataset.res;
+      const t = GATHER_BY_RESOURCE[res];
+      const check = c.gatherTarget(res);
+      btn.classList.toggle('off', !check.ok);
+      btn.disabled = !check.ok;
+      btn.title = check.ok
+        ? `Mandar a recolectar ${t.name}`
+        : `${t.name}: ${check.reason}`;
+      btn.classList.toggle('active', sel.some(u => u.manual && u.task && u.task.resource === res));
+    });
+    this.els.boxBtn.classList.toggle('active', !!this.civ.boxMode);
+  }
+
+  /** Panel del edificio seleccionado (ayuntamiento = crear civiles). */
+  _refreshTown(c) {
+    const info = this.civ.selectedBuildingInfo ? this.civ.selectedBuildingInfo() : null;
+    if (this.els.town) this.els.town.classList.toggle('on', !!info);
+    if (!info) return;
+    const def = info.def;
+    this._setHTML('townIcon', this.els.townIcon, def.icon);
+    this._setText('townName', this.els.townName, def.name);
+    this._setHTML('townSub', this.els.townSub,
+      `${ERAS[def.era] ? ERAS[def.era].icon : ''} ${ERAS[def.era] ? ERAS[def.era].name : ''} · ❤️ ${info.hp}%${info.progress < 1 ? ' · en obras' : ''}`);
+    this._setHTML('townBody', this.els.townBody, this._townBody(c, info));
+  }
+
+  _townBody(c, info) {
+    const def = info.def;
+    const rows = [];
+    if (info.progress < 1) {
+      const pct = Math.round(info.progress * 100);
+      rows.push(`<div class="civ-bar"><i style="width:${pct}%"></i></div>`);
+      rows.push(`<div class="civ-town-row"><span>🚧 Obra al ${pct}%</span><span>👷 ${info.workers} · 🖐 ${info.manual}</span></div>`);
+      rows.push(`<button class="civ-btn danger" data-act="cancel-build" type="button">↩️ Cancelar (50% devuelto)</button>`);
+    } else if (def.role) {
+      rows.push(`<div class="civ-town-row"><span>👷 Trabajadores</span><b>${info.workers}</b></div>`);
+      if (info.manual) rows.push(`<div class="civ-town-row"><span>🖐 Recolectando a mano</span><b>${info.manual}</b></div>`);
+      const p = PRIORITIES[ROLE_PRIORITY[def.role]];
+      if (p) rows.push(`<div class="civ-town-note">Sube «${p.icon} ${p.name}» en el reparto para tener más ${UNIT_NAME[def.role]}</div>`);
+    } else if (def.guards) {
+      rows.push(`<div class="civ-town-row"><span>🛡️ Guardias posibles</span><b>${def.guards}</b></div>`);
+    }
+
+    // El ayuntamiento además entrena civiles
+    if (def.id === 'center') {
+      const full = c.population >= c.popCap;
+      const food = Math.floor(c.storage.food || 0);
+      const busy = c.trainTimer > 0;
+      const pct = busy ? Math.round((1 - c.trainTimer / BALANCE.trainTime) * 100) : 0;
+      rows.push(`<div class="civ-town-row"><span>👥 Población</span><b>${c.population}/${c.popCap}</b></div>`);
+      if (busy) {
+        rows.push(`<div class="civ-bar train"><i style="width:${pct}%"></i></div>`);
+        rows.push(`<div class="civ-town-note">🏛️ Llega un ${c.theme.singular} en ${c.trainTimer.toFixed(1)} s…</div>`);
+      }
+      rows.push(`<button class="civ-btn primary wide" data-act="train" type="button" ${busy || full || food < BALANCE.trainFood ? 'disabled' : ''}>
+        ➕ Nuevo ${c.theme.singular} <em>🍞 ${BALANCE.trainFood}</em></button>`);
+      rows.push(full
+        ? `<div class="civ-town-note warn">🏠 Límite alcanzado: cada vivienda suma +${BUILDINGS.house.popCap} de población</div>`
+        : food < BALANCE.trainFood
+          ? `<div class="civ-town-note warn">🍞 Falta alimento (${food}/${BALANCE.trainFood}): construye una granja 🌾</div>`
+          : `<div class="civ-town-note">Tarda ${BALANCE.trainTime} s · el límite sube con viviendas 🏠</div>`);
+    }
+    return rows.join('');
+  }
+
+  /** Tutorial del primer planeta. */
+  _refreshTutorial(c) {
+    const t = this.civ.tutorial;
+    // La guía es del primer planeta aterrizado: en los demás no se muestra.
+    const step = (t && (!t.planetId || t.planetId === c.planetId)) ? t.step : null;
+    if (this.els.tut) this.els.tut.classList.toggle('on', !!step);
+    if (this.els.guideBtn) this.els.guideBtn.classList.toggle('active', !step && !!t && !t.done && !!t.planetId && t.planetId === c.planetId);
+    if (!step) return;
+    this._setHTML('tutIcon', this.els.tutIcon, step.icon);
+    this._setText('tutTitle', this.els.tutTitle, step.title);
+    this._setText('tutProgress', this.els.tutProgress, t.progress);
+    this._setHTML('tutText', this.els.tutText, step.text);
+    this._setHTML('tutNote', this.els.tutNote,
+      c.planet ? `Guía de ${c.name} · se cierra sola al completarla` : 'Guía de construcción');
   }
 
   _setText(key, el, value, apply) {

@@ -142,3 +142,135 @@ test('los edificios de era superior aparecen bloqueados al inicio', () => {
   assert.ok(lab.classList.contains('locked'), 'el laboratorio es de era 2');
   assert.ok(BUILDINGS.lab.era > 0);
 });
+
+test('la barra de órdenes manda a los civiles seleccionados a recolectar', () => {
+  const { civ, ui } = make();
+  ui.show();
+  civ.colony.storage.food = 100;
+  // Sin selección no se puede dar la orden
+  ui._order('wood');
+  assert.equal(civ.colony.manualUnits().length, 0);
+
+  civ.selectAllUnits();
+  ui.refresh(0, true);
+  assert.equal(ui.els.selCount.textContent.includes('seleccionados'), true, 'la barra cuenta la selección');
+
+  const orders = document.querySelectorAll('.civ-order');
+  assert.equal(orders.length, 6, 'un botón por recurso recolectable');
+  const wood = document.querySelector('.civ-order[data-res="wood"]');
+  wood.click();
+  assert.equal(civ.colony.manualUnits().length, civ.colony.units.length, 'todos pasan a recolectar madera');
+  assert.equal(civ.colony.units.every(u => u.role === 'logger'), true);
+  assert.ok(wood.classList.contains('active'), 'la orden activa se marca');
+
+  // Volver al reparto automático
+  document.querySelector('.civ-btn[data-act="release"]').click();
+  assert.equal(civ.colony.manualUnits().length, 0);
+  assert.equal(wood.classList.contains('active'), false);
+});
+
+test('un recurso sin dónde explotarlo aparece bloqueado en la barra', () => {
+  const { civ, ui } = make();
+  ui.show();
+  civ.colony.buildings = civ.colony.buildings.filter(b => b.type !== 'farm');
+  ui.refresh(0, true);
+  const food = document.querySelector('.civ-order[data-res="food"]');
+  assert.equal(food.disabled, true, 'sin granja no se puede mandar a por alimento');
+  assert.match(food.title, /granja/);
+});
+
+test('el ayuntamiento entrena civiles y el límite lo suben las viviendas', () => {
+  const { civ, ui } = make();
+  ui.show();
+  const center = civ.colony.findBuilding('center');
+  civ.selectBuilding(center.uid);
+  ui.refresh(0, true);
+  assert.ok(document.getElementById('civ-town').classList.contains('on'), 'se abre el panel del ayuntamiento');
+
+  // Sin alimento no se puede
+  civ.colony.storage.food = 0;
+  ui.refresh(0, true);
+  assert.equal(document.querySelector('[data-act="train"]').disabled, true);
+
+  // Con alimento entrena y el civil nace al terminar la espera
+  civ.colony.storage.food = 200;
+  civ.colony.storage.wood = 500;
+  civ.colony.storage.stone = 500;
+  civ.colony.build('house').building.progress = 1;   // +4 de población
+  const pop0 = civ.colony.population;
+  ui.refresh(0, true);
+  const train = document.querySelector('[data-act="train"]');
+  assert.equal(train.disabled, false, 'con comida y sitio se puede entrenar');
+  train.click();
+  assert.ok(civ.colony.trainTimer > 0, 'queda un civil en camino');
+  for (let i = 0; i < 20 && civ.colony.population === pop0; i++) civ.updateColonies(0.5);
+  assert.equal(civ.colony.population, pop0 + 1, 'nace el civil nuevo');
+
+  // Al llegar al límite el botón se bloquea y lo dice
+  while (civ.colony.population < civ.colony.popCap) civ.colony.spawnUnit('citizen');
+  ui.refresh(0, true);
+  assert.equal(document.querySelector('[data-act="train"]').disabled, true);
+  assert.match(ui.els.townBody.innerHTML, /vivienda/, 'avisa de que faltan casas');
+});
+
+test('la guía aparece en el primer planeta y no en los siguientes', () => {
+  const { civ, ui, planet } = make();
+  ui.show();
+  assert.ok(civ.tutorial, 'se crea la guía al aterrizar');
+  assert.equal(civ.tutorial.planetId, planet.config.id);
+  assert.ok(document.getElementById('civ-tut').classList.contains('on'));
+  assert.equal(document.querySelectorAll('.civ-order').length, 6);
+
+  // Avanza sola al cumplir el paso (5 civiles en la colonia)
+  civ.colony.storage.food = 500;
+  for (let i = 0; i < 6; i++) { civ.colony.trainCitizen(); for (let k = 0; k < 14; k++) civ.updateColonies(0.5); }
+  civ.update(0.1, {});
+  assert.ok(civ.tutorial.index >= 1, `la guía avanza (índice ${civ.tutorial.index})`);
+
+  // Se cierra y ya no vuelve a aparecer
+  document.querySelector('[data-act="tut-close"]').click();
+  assert.equal(document.getElementById('civ-tut').classList.contains('on'), false);
+  assert.ok(document.querySelector('.civ-btn[data-act="guide"]').classList.contains('active'));
+  civ.colony.build('farm').building.progress = 1;
+  civ.update(0.1, {});
+  ui.refresh(0, true);
+  assert.equal(document.getElementById('civ-tut').classList.contains('on'), false, 'cerrada no reaparece');
+
+  // En otro planeta la guía del primero no se muestra
+  const other = {
+    config: { id: 'venus', radius: 3, name: 'Venus', emoji: '♀️' },
+    group: new THREE.Group(),
+    worldPosition: new THREE.Vector3(),
+  };
+  civ.scene.add(other.group);
+  civ.exit();
+  civ.enter(other);
+  ui.refresh(0, true);
+  assert.equal(document.getElementById('civ-tut').classList.contains('on'), false, 'la guía es solo del primer planeta');
+  assert.equal(civ.tutorial.planetId, 'mars');
+  civ.exit();
+  civ.enter(planet);
+});
+
+test('el botón de recuadro activa la selección múltiple', () => {
+  const { civ, ui } = make();
+  ui.show();
+  assert.equal(civ.boxMode, false);
+  document.querySelector('.civ-btn[data-act="box"]').click();
+  assert.equal(civ.boxMode, true);
+  assert.ok(document.querySelector('.civ-btn[data-act="box"]').classList.contains('active'));
+  document.querySelector('.civ-btn[data-act="box"]').click();
+  assert.equal(civ.boxMode, false);
+});
+
+test('el tutorial se guarda y se recupera con la partida', () => {
+  const { civ } = make();
+  civ.tutorial.advance();
+  const data = JSON.parse(JSON.stringify(civ.serializeTutorial()));
+  assert.equal(data.planetId, 'mars');
+
+  const other = make();
+  other.civ.loadTutorial(data);
+  assert.equal(other.civ.tutorial.index, 1);
+  assert.equal(other.civ.tutorial.planetId, 'mars');
+});
