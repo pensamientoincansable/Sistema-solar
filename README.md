@@ -79,6 +79,23 @@ Y distancias de cámara · Back tienda · D-pad ▲▼ subir/bajar · L3 cinemá
 - La biomasa tiene una probabilidad mayor cerca de la Tierra para que el primer acceso no dependa de una búsqueda
   frustrante.
 
+**Dentro de la colonia (CivMode)**
+
+| Acción | Cómo |
+| --- | --- |
+| Mover la cámara | arrastrar · acercar/alejar con la rueda o dos dedos · W/S/A/D |
+| Elegir edificio | panel izquierdo 🏗️ y toque en el terreno (la rejilla marca el sitio) |
+| Seleccionar civiles | toque sobre ellos, botón ☑️ Todos o ▭ **Recuadro** (arrastrar) |
+| Mandar a recolectar | barra de órdenes inferior: 🌾 alimento · 🪵 madera · 🪨 piedra · ⛏️ metal · 💎 cristal · ⚡ energía (o toca un yacimiento con civiles seleccionados) |
+| Volver al reparto automático | ↩️ Auto |
+| Crear civiles | panel del 🏛️ Ayuntamiento → **Nuevo civil** (🍞 30). El límite de población sube +4 por vivienda |
+| Guía de construcción | aparece en el primer planeta civilizado y se cierra sola al completar cada paso (📘 Guía para reabrirla) |
+
+- La superficie es una escena propia (cielo con sol, estrellas y polvo; terreno con relieve y curvatura del planeta,
+  sombras de contacto y decoración), así que el sol y los anillos del espacio ya no atraviesan la colonia al aterrizar.
+- Cada civil es un personaje animado (torso, cabeza, pelo, ojos, brazos, piernas y herramienta según su papel) y
+  cada edificio tiene su propia silueta; las obras en curso se dibujan semitransparentes y encogidas.
+
 ### ☄️ Lluvias de asteroides (modelo `assets/asteroides`)
 - Cada 70–110 s (la primera a los ~55 s) una oleada se dirige contra una refinería, avisada con banner,
   marcador en pantalla y minimapa.
@@ -149,6 +166,8 @@ scripts/optimize-assets.mjs
 tests/                   pruebas de colonia, guardado, cámara, HUD (npm test)
 src/
   civ/                   simulación RTS (Colony) y modo superficie 3D (CivMode)
+                         CivAssets (geometrías/texturas compartidas), CivSky (cielo y sol),
+                         CivStructures (edificios), CivActors (civiles), CivTutorial (guía)
   systems/SaveSystem.js  autoguardado + archivo .json
 src/
   config/PlanetsConfig.js, ShopConfig.js

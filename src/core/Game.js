@@ -1318,6 +1318,7 @@ export class Game {
         totalBuilt: this.civilization.totalBuilt,
       } : null,
       colonies: this.civ ? this.civ.serializeColonies() : {},
+      civTutorial: this.civ ? this.civ.serializeTutorial() : null,
       refinery: stations,
       stats: { ...this._stats },
       flags: { won: !!this._won, missionBegun: !!this._missionBegun },
@@ -1382,6 +1383,9 @@ export class Game {
 
       if (this.civ) {
         this.civ.loadColonies(state.colonies || {});
+        // La guía del primer planeta viaja con la partida (cerrada o terminada
+        // sigue cerrada al volver).
+        if (state.civTutorial) this.civ.loadTutorial(state.civTutorial);
         // Una colonia guardada también implica acceso, incluso si procede de
         // una partida de transición que todavía no tenía el registro orbital.
         if (this.civilization) {

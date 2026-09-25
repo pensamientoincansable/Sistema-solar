@@ -34,6 +34,39 @@ export const PRIORITIES = {
   research: { key: 'research', name: 'Investigación', icon: '🔬', default: 4 },
 };
 
+/**
+ * Órdenes manuales: a qué puede mandar el jugador a un colono seleccionado.
+ * `source` indica qué necesita la colonia para esa orden:
+ *   farm     -> una granja terminada (los cultivos)
+ *   forest   -> un bosque (yacimiento de madera)
+ *   vein     -> un filón de piedra o metal
+ *   crystal  -> un filón de cristal (o un taller que lo refine)
+ *   plant    -> una planta de energía
+ * `role` es el papel que adopta el colono mientras obedece.
+ */
+export const GATHER_TASKS = [
+  { resource: 'food', name: 'Alimento', icon: '🌾', role: 'farmer', source: 'farm' },
+  { resource: 'wood', name: 'Madera', icon: '🪵', role: 'logger', source: 'forest' },
+  { resource: 'stone', name: 'Piedra', icon: '🪨', role: 'miner', source: 'vein' },
+  { resource: 'metal', name: 'Metal', icon: '⛏️', role: 'miner', source: 'vein' },
+  { resource: 'crystal', name: 'Cristal', icon: '💎', role: 'miner', source: 'crystal' },
+  { resource: 'energy', name: 'Energía', icon: '⚡', role: 'miner', source: 'plant' },
+];
+
+export const GATHER_BY_RESOURCE = GATHER_TASKS.reduce((acc, t) => {
+  acc[t.resource] = t;
+  return acc;
+}, {});
+
+/** Texto de lo que falta para poder dar una orden (para la interfaz). */
+export const GATHER_MISSING = {
+  farm: 'Necesitas una granja 🌾 que alimente a los colonos',
+  forest: 'No queda bosque cerca: construye una carpintería junto a los árboles',
+  vein: 'No hay filón de ese material cerca de la colonia',
+  crystal: 'No hay cristal cerca: construye un taller 🔧 para refinarlo',
+  plant: 'Necesitas una planta de energía ⚡',
+};
+
 /** Qué prioridad alimenta a cada papel de trabajador. */
 export const ROLE_PRIORITY = {
   farmer: 'food',
@@ -46,15 +79,15 @@ export const ROLE_PRIORITY = {
 
 export const BUILDINGS = {
   center: {
-    id: 'center', name: 'Centro de la colonia', icon: '🏛️', era: 0, max: 1,
+    id: 'center', name: 'Ayuntamiento', icon: '🏛️', era: 0, max: 1,
     cost: {}, buildTime: 0, popCap: 4, workers: 0,
-    desc: 'Corazón del asentamiento: almacena recursos y aloja a los primeros colonos.',
+    desc: 'Sede de la colonia: entrena nuevos civiles y almacena los recursos.',
     role: null,
   },
   house: {
     id: 'house', name: 'Vivienda', icon: '🏠', era: 0, max: 10,
     cost: { wood: 40, stone: 20 }, buildTime: 6, popCap: 4, workers: 0,
-    desc: '+4 de población máxima. Sin casas la colonia deja de crecer.',
+    desc: '+4 de población máxima. Sin viviendas el ayuntamiento no puede crear más civiles.',
     role: null,
   },
   farm: {
@@ -120,7 +153,7 @@ export const BUILD_ORDER = ['center', 'house', 'farm', 'sawmill', 'mine', 'plant
 export const ERAS = [
   {
     id: 0, name: 'Asentamiento', icon: '⛺', cost: {}, knowledge: 0, bonus: 1,
-    desc: 'Cuatro colonos, un centro y poco más. Sobrevive y crece.',
+    desc: 'Cuatro civiles, un ayuntamiento y poco más. Sobrevive y crece.',
   },
   {
     id: 1, name: 'Aldea', icon: '🏘️', cost: { food: 200, wood: 250, metal: 150 }, knowledge: 60, bonus: 1.15,
@@ -147,6 +180,24 @@ export const UNIT_TYPES = {
   guard: { id: 'guard', name: 'Guardia', speed: 4.0, color: 0xff6b6b, icon: '🛡️' },
 };
 
+/**
+ * Vestimenta de cada papel: lo que se ve en el muñeco 3D.
+ * `hat` = none | helmet | straw · `tool` = objeto que lleva en la mano.
+ */
+export const UNIT_LOOK = {
+  citizen: { tunic: 0x9fd8ff, trousers: 0x3f4a58, hat: null, tool: null },
+  builder: { tunic: 0xffc14d, trousers: 0x4a4136, hat: 'helmet', tool: 'hammer' },
+  farmer: { tunic: 0x66d17a, trousers: 0x5b4a33, hat: 'straw', tool: 'hoe' },
+  logger: { tunic: 0xb98a4b, trousers: 0x4d3a24, hat: null, tool: 'axe' },
+  miner: { tunic: 0xcfd6e0, trousers: 0x3d444c, hat: 'helmet', tool: 'pickaxe' },
+  scholar: { tunic: 0xc08bff, trousers: 0x39404d, hat: null, tool: 'tablet' },
+  guard: { tunic: 0xff6b6b, trousers: 0x2f3540, hat: 'helmet', tool: 'rifle' },
+};
+
+/** Tonos de piel y de pelo: se reparten entre los civiles para que no sean clones. */
+export const SKIN_TONES = [0xf6d5b8, 0xe8b98d, 0xc98d5f, 0x9c6640, 0x6f4526, 0xf0c3a0];
+export const HAIR_TONES = [0x2b1d12, 0x4a2c17, 0x7a4a22, 0xb07a3a, 0xd8c07a, 0x8f8f96];
+
 /** Balance general de la simulación. */
 export const BALANCE = {
   startCitizens: 3,
@@ -162,6 +213,12 @@ export const BALANCE = {
   raidDuration: 16,
   nodeRegen: 0.35,           // unidades de recurso que recupera un filón agotado por segundo
   exportRate: 0.5,           // fracción del almacén que se envía a la órbita
+  // Ayuntamiento: creación manual de civiles (el límite lo suben las viviendas)
+  trainTime: 6,              // s que tarda en llegar un nuevo civil
+  trainFood: 30,             // alimento que cuesta
+  // Recolección manual (seleccionar civiles y mandarlos a un recurso)
+  manualRate: 1.15,          // recursos por segundo y colono en un yacimiento
+  manualReach: 2.8,          // distancia al yacimiento a la que se cuenta trabajando
 };
 
 /**
@@ -185,7 +242,7 @@ export const PLANET_CIV = {
     yields: { wood: 1.2, metal: 0.85 },
   },
   earth: {
-    demonym: 'Terrícolas', singular: 'terricola',
+    demonym: 'Terrícolas', singular: 'terrícola',
     ground: 0x3f7a3a, rock: 0x77705f, sky: 0x1d4a72, flora: 'tree',
     nodes: { vein: 3, forest: 4, crystal: 1 },
     note: 'El hogar: bosques y agua abundantes, mineral justo.',

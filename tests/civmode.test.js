@@ -11,7 +11,8 @@ import { installDom } from './helpers/dom.js';
 installDom();
 
 const THREE = await import('three');
-const { CivMode, heightAt } = await import('../src/civ/CivMode.js');
+const { CivMode, heightAt, groundAt } = await import('../src/civ/CivMode.js');
+const { curvature, PLANET_BODY_RADIUS } = await import('../src/civ/CivSky.js');
 const { BUILDINGS, GRID } = await import('../src/civ/CivConfig.js');
 
 function makePlanet(id = 'earth', radius = 5) {
@@ -65,6 +66,19 @@ test('la altura del terreno es llana en el centro y crece hacia fuera', () => {
     maxH = Math.max(maxH, Math.abs(heightAt(Math.cos(a) * 60, Math.sin(a) * 60)));
   }
   assert.ok(maxH > 0.5, `fuera de la ciudad hay relieve (máx ${maxH.toFixed(2)})`);
+});
+
+test('la curvatura del suelo encaja con la esfera del planeta', () => {
+  // El disco de terreno y el cuerpo del planeta deben compartir superficie:
+  // si no, se ve un escalón flotante en el horizonte.
+  const R = PLANET_BODY_RADIUS;
+  for (const r of [0, 12, 25, 40, 56.25]) {
+    const sphere = -R + Math.sqrt(Math.max(0, R * R - r * r));
+    assert.ok(Math.abs(curvature(r) - sphere) < 1e-6, `en r=${r} el suelo debe seguir la esfera`);
+  }
+  assert.equal(curvature(0), 0, 'en el centro no hay curvatura');
+  assert.ok(curvature(56.25) < -1.5, 'el borde del terreno debe caer hacia el horizonte');
+  assert.equal(groundAt(0, 0), 0, 'la colonia arranca a nivel del mar');
 });
 
 test('construir crea el edificio en la colonia y su malla en la escena', () => {

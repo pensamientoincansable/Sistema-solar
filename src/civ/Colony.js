@@ -9,7 +9,7 @@
  */
 import {
   BALANCE, BUILDINGS, ERAS, GRID, TILE, CITY_RADIUS, PRIORITIES, ROLE_PRIORITY,
-  UNIT_TYPES, planetCiv, yieldFactor,
+  UNIT_TYPES, planetCiv, yieldFactor, GATHER_BY_RESOURCE, GATHER_MISSING,
 } from './CivConfig.js';
 
 const _r = (min, max) => min + Math.random() * (max - min);
@@ -46,6 +46,7 @@ export class Colony {
     this.raid = { timer: BALANCE.raidFirst, active: false, time: 0, power: 0, name: '' };
     this.hunger = 0;
     this.growthTimer = 0;
+    this.trainTimer = 0;          // > 0: el ayuntamiento está preparando un civil
     this.stats = { gathered: {}, built: 0, raids: 0, raidsRepelled: 0, lost: 0, exported: 0, buildingsLost: 0 };
     this.events = [];
     this._assignTimer = 0;
@@ -163,6 +164,21 @@ export class Colony {
       }
     }
     rates.food -= this.foodRate;
+    // Civiles con orden manual: también aportan (la interfaz lo muestra)
+    for (const u of this.units) {
+      if (!u.manual || !u.task) continue;
+      const res = u.task.resource;
+      let rate = BALANCE.manualRate * this.eraBonus * yieldFactor(this.planetId, res);
+      if (u.task.kind === 'building') {
+        const b = this.buildings.find(x => x.uid === u.task.uid);
+        const def = b && BUILDINGS[b.type];
+        if (b && b.type === 'workshop' && res === 'crystal') rate = 0.13 * this.eraBonus;
+        else if (def && def.produces && def.produces[res]) {
+          rate = def.produces[res] * this.eraBonus * yieldFactor(this.planetId, res);
+        }
+      }
+      rates[res] = (rates[res] || 0) + rate;
+    }
     for (const k of Object.keys(rates)) rates[k] = Math.round(rates[k] * 100) / 100;
     return rates;
   }
@@ -307,6 +323,7 @@ export class Colony {
       x: (c ? c.x : 0) + _r(-3, 3), z: (c ? c.z : 0) + _r(-3, 3),
       tx: null, tz: null, state: 'idle', wait: 0,
       building: null, node: null, carry: 0,
+      task: null, manual: false,
     };
     this.units.push(u);
     return u;
@@ -319,6 +336,113 @@ export class Colony {
   }
 
   citizensByRole(role) { return this.units.filter(u => u.role === role).length; }
+
+  /** Civiles con orden manual (los que ha mandado el jugador). */
+  manualUnits() { return this.units.filter(u => u.manual); }
+
+  /**
+   * Mejor destino para recolectar un recurso: el yacimiento más cercano o el
+   * edificio que lo produce. Devuelve `{ ok, target }` o `{ ok:false, reason }`.
+   */
+  gatherTarget(resource) {
+    const task = GATHER_BY_RESOURCE[resource];
+    if (!task) return { ok: false, reason: 'Recurso desconocido' };
+    const done = (b) => b.progress >= 1;
+    if (task.source === 'farm' || task.source === 'plant') {
+      const type = task.source === 'farm' ? 'farm' : 'plant';
+      const list = this.buildings.filter(b => b.type === type && done(b));
+      if (!list.length) return { ok: false, reason: GATHER_MISSING[task.source] };
+      list.sort((a, b) => a.uid - b.uid);
+      return { ok: true, target: { kind: 'building', uid: list[0].uid } };
+    }
+    if (task.source === 'forest' || task.source === 'crystal' || task.source === 'vein') {
+      let best = null;
+      let bestD = Infinity;
+      for (const n of this.nodes) {
+        if (task.source === 'forest' && n.kind !== 'forest') continue;
+        if (task.source === 'crystal' && n.resource !== 'crystal') continue;
+        if (task.source === 'vein' && (n.kind !== 'vein' || n.resource !== resource)) continue;
+        if (n.amount <= 0) continue;
+        const d = n.x * n.x + n.z * n.z;
+        if (d < bestD) { bestD = d; best = n; }
+      }
+      if (best) return { ok: true, target: { kind: 'node', uid: best.uid } };
+      // Sin yacimiento a mano: un taller refina metal en cristal
+      const shop = this.buildings.find(b => b.type === 'workshop' && done(b));
+      if (resource === 'crystal' && shop) return { ok: true, target: { kind: 'building', uid: shop.uid } };
+      return { ok: false, reason: GATHER_MISSING[task.source] };
+    }
+    return { ok: false, reason: 'Orden no disponible' };
+  }
+
+  /**
+   * Manda a los civiles seleccionados a recolectar un recurso. Quedan con
+   * orden manual: el reparto automático ya no los mueve de faena.
+   */
+  command(uids, resource) {
+    const t = this.gatherTarget(resource);
+    if (!t.ok) return t;
+    const def = GATHER_BY_RESOURCE[resource];
+    let n = 0;
+    for (const uid of uids || []) {
+      const u = this.units.find(x => x.uid === uid);
+      if (!u) continue;
+      u.task = { kind: t.target.kind, uid: t.target.uid, resource };
+      u.manual = true;
+      u.role = def.role;
+      u.building = null;
+      u.node = null;
+      u.tx = null;
+      u.tz = null;
+      u.wait = 0;
+      n++;
+    }
+    if (!n) return { ok: false, reason: 'No hay civiles seleccionados' };
+    this.pushEvent(`${def.icon} ${n} ${n === 1 ? 'civil va' : 'civiles van'} a por ${def.name.toLowerCase()}`, 'info');
+    return { ok: true, count: n, resource };
+  }
+
+  /** Devuelve los civiles al reparto automático de la colonia. */
+  release(uids) {
+    let n = 0;
+    for (const uid of uids || []) {
+      const u = this.units.find(x => x.uid === uid);
+      if (!u || !u.manual) continue;
+      u.manual = false;
+      u.task = null;
+      u.role = 'citizen';
+      u.building = null;
+      u.node = null;
+      u.tx = null;
+      u.tz = null;
+      n++;
+    }
+    if (n) this.pushEvent(`✋ ${n} ${n === 1 ? 'civil vuelve' : 'civiles vuelven'} al reparto automático`, 'info');
+    return { ok: true, count: n };
+  }
+
+  /**
+   * El ayuntamiento prepara un nuevo civil. El límite de población lo suben las
+   * viviendas (y el puerto espacial), así que sin casas no se puede crecer.
+   */
+  trainCitizen() {
+    const center = this.findBuilding('center');
+    if (!center || center.progress < 1) return { ok: false, reason: 'Necesitas el ayuntamiento 🏛️' };
+    if (this.population >= this.popCap) {
+      return { ok: false, reason: `Límite de población (${this.popCap}): construye viviendas 🏠` };
+    }
+    if (this.trainTimer > 0) return { ok: false, reason: 'Ya hay un civil en camino…' };
+    if ((this.storage.food || 0) < BALANCE.trainFood) {
+      return {
+        ok: false,
+        reason: `Falta alimento 🍞 ${Math.floor(this.storage.food || 0)}/${BALANCE.trainFood}`,
+      };
+    }
+    this.storage.food -= BALANCE.trainFood;
+    this.trainTimer = BALANCE.trainTime;
+    this.pushEvent(`🏛️ El ayuntamiento prepara un nuevo ${this.theme.singular}…`, 'info');
+    return { ok: true, time: BALANCE.trainTime };
+  }
 
   /**
    * Reparte a los ciudadanos entre los papeles disponibles según los
@@ -359,7 +483,8 @@ export class Colony {
       const pb = prio[ROLE_PRIORITY[b]] ?? 5;
       return pb - pa;
     });
-    const pool = this.units.filter(u => u.role !== 'guard');
+    // Los civiles con orden manual del jugador se quedan como están
+    const pool = this.units.filter(u => u.role !== 'guard' && !u.manual);
     for (const u of pool) { u.building = null; u.node = null; }
     const free = pool.slice();
     for (const role of order) {
@@ -379,13 +504,13 @@ export class Colony {
       let n = 0;
       for (const u of this.units) {
         if (n >= b.workers) break;
-        if (u.role === def.role && !u.building) { u.building = b.uid; u.node = b.node; n++; }
+        if (u.role === def.role && !u.building && !u.manual) { u.building = b.uid; u.node = b.node; n++; }
       }
     }
     // Constructores -> obra pendiente
     for (const b of pending) {
       for (const u of this.units) {
-        if (u.role === 'builder' && !u.building) { u.building = b.uid; u.node = null; break; }
+        if (u.role === 'builder' && !u.building && !u.manual) { u.building = b.uid; u.node = null; break; }
       }
     }
     // La producción depende de los peones realmente destinados (no de la cuota)
@@ -400,7 +525,7 @@ export class Colony {
     // 5) Guardias nuevos (cuestan comida y metal, ocupan población)
     const nowGuards = this.units.filter(u => u.role === 'guard').length;
     if (nowGuards < wantGuards) {
-      const idle = this.units.find(u => u.role === 'citizen');
+      const idle = this.units.find(u => u.role === 'citizen' && !u.manual);
       const cost = (BUILDINGS.barracks.guardCost) || {};
       const affordable = Object.keys(cost).every(r => (this.storage[r] || 0) >= cost[r]);
       if (idle && affordable) {
@@ -420,9 +545,11 @@ export class Colony {
 
     this._consumeFood(dt);
     this._produce(dt);
+    this._manualGather(dt);
     this._construction(dt);
     this._barracks(dt);
     this._growth(dt);
+    this._training(dt);
     this._raids(dt);
 
     this._assignTimer -= dt;
@@ -443,7 +570,8 @@ export class Colony {
       this.hunger += dt;
       if (this.hunger > 12) {
         this.hunger = 0;
-        const victim = this.units.find(u => u.role !== 'guard') || this.units[0];
+        const victim = this.units.find(u => u.role !== 'guard' && !u.manual)
+          || this.units.find(u => u.role !== 'guard') || this.units[0];
         if (victim && this.population > 1) {
           this.removeUnit(victim.uid);
           this.stats.lost++;
@@ -525,6 +653,58 @@ export class Colony {
     this.storage.food -= BALANCE.growthFood;
     this.spawnUnit('citizen');
     this.pushEvent(`👶 Nuevo ${this.theme.singular} en la colonia (${this.population}/${this.popCap})`, 'success');
+  }
+
+  /** Producción de los civiles con orden manual (seleccionados por el jugador). */
+  _manualGather(dt) {
+    for (const u of this.units) {
+      if (!u.manual || !u.task) continue;
+      const res = u.task.resource;
+      if (u.task.kind === 'node') {
+        const node = this.nodes.find(n => n.uid === u.task.uid);
+        if (!node || node.amount <= 0) continue;
+        if ((node.x - u.x) ** 2 + (node.z - u.z) ** 2 > BALANCE.manualReach ** 2) continue;
+        const amount = BALANCE.manualRate * this.eraBonus * yieldFactor(this.planetId, res) * dt;
+        node.amount = Math.max(0, node.amount - amount);
+        this.storage[res] = (this.storage[res] || 0) + amount;
+        this.stats.gathered[res] = (this.stats.gathered[res] || 0) + amount;
+        continue;
+      }
+      const b = this.buildings.find(x => x.uid === u.task.uid);
+      if (!b || b.progress < 1) continue;
+      if ((b.x - u.x) ** 2 + (b.z - u.z) ** 2 > (BALANCE.manualReach + 1.5) ** 2) continue;
+      const def = BUILDINGS[b.type];
+      if (b.type === 'workshop' && res === 'crystal') {
+        // El taller convierte metal en cristal
+        const need = 0.32 * dt;
+        if ((this.storage.metal || 0) >= need) {
+          this.storage.metal -= need;
+          this.storage.crystal = (this.storage.crystal || 0) + 0.13 * dt * this.eraBonus;
+          this.stats.gathered.crystal = (this.stats.gathered.crystal || 0) + 0.13 * dt * this.eraBonus;
+        }
+        continue;
+      }
+      const rate = ((def.produces && def.produces[res]) || BALANCE.manualRate)
+        * this.eraBonus * yieldFactor(this.planetId, res);
+      this.storage[res] = (this.storage[res] || 0) + rate * dt;
+      this.stats.gathered[res] = (this.stats.gathered[res] || 0) + rate * dt;
+    }
+  }
+
+  /** Civil en preparación desde el ayuntamiento. */
+  _training(dt) {
+    if (this.trainTimer <= 0) return;
+    this.trainTimer -= dt;
+    if (this.trainTimer > 0) return;
+    this.trainTimer = 0;
+    if (this.population < this.popCap) {
+      this.spawnUnit('citizen');
+      this.pushEvent(`👶 ¡Nuevo ${this.theme.singular}! (${this.population}/${this.popCap})`, 'success');
+    } else {
+      // Sin vivienda libre se devuelve el alimento gastado
+      this.storage.food = (this.storage.food || 0) + BALANCE.trainFood;
+      this.pushEvent('🏠 Sin viviendas libres: construye más casas para acoger al civil', 'warn');
+    }
   }
 
   _raids(dt) {
@@ -611,6 +791,21 @@ export class Colony {
           const a = this.age * 0.35 + u.uid;
           tx = Math.cos(a) * (CITY_RADIUS - 6);
           tz = Math.sin(a) * (CITY_RADIUS - 6);
+        } else if (u.manual && u.task) {
+          // Orden manual: va al yacimiento y vuelve al ayuntamiento con la carga
+          const target = u.task.kind === 'node'
+            ? this.nodes.find(n => n.uid === u.task.uid)
+            : this.buildings.find(x => x.uid === u.task.uid);
+          if (!target) {
+            u.task = null;
+            u.manual = false;
+            u.role = 'citizen';
+          } else {
+            const goSource = ((this.age * 0.14 + u.uid * 0.41) % 2) < 1.5;
+            if (goSource) { tx = target.x; tz = target.z; }
+            else if (center) { tx = center.x + _r(-2.5, 2.5); tz = center.z + _r(-2.5, 2.5); }
+            else { tx = target.x; tz = target.z; }
+          }
         } else if (b && u.node !== null) {
           const node = this.nodes.find(n => n.uid === u.node);
           // Va y viene entre la faena y el edificio
@@ -634,7 +829,9 @@ export class Colony {
       const d = Math.hypot(dx, dz);
       if (d < 0.7) {
         u.wait = _r(0.4, 1.6);
-        if (u.node !== null) u.carry = (u.carry + 1) % (BALANCE.carryMax + 1);
+        if (u.node !== null || (u.manual && u.task && u.task.kind === 'node')) {
+          u.carry = (u.carry + 1) % (BALANCE.carryMax + 1);
+        }
       } else {
         const step = Math.min(d, speed * dt);
         u.x += (dx / d) * step;
@@ -694,6 +891,7 @@ export class Colony {
       priority: { ...this.priority },
       hunger: this.hunger,
       growthTimer: this.growthTimer,
+      trainTimer: this.trainTimer,
       raid: { ...this.raid },
       stats: { ...this.stats, gathered: { ...this.stats.gathered } },
       buildings: this.buildings.map(b => ({ ...b })),
@@ -701,6 +899,7 @@ export class Colony {
       units: this.units.map(u => ({
         uid: u.uid, role: u.role, x: Math.round(u.x * 100) / 100, z: Math.round(u.z * 100) / 100,
         building: u.building, node: u.node, carry: u.carry,
+        manual: !!u.manual, task: u.task ? { ...u.task } : null,
       })),
     };
   }
@@ -732,6 +931,7 @@ export class Colony {
     }
     c.hunger = Number(data.hunger) || 0;
     c.growthTimer = Number(data.growthTimer) || 0;
+    c.trainTimer = Math.max(0, Number(data.trainTimer) || 0);
     if (data.raid && typeof data.raid === 'object') {
       c.raid = {
         timer: Number(data.raid.timer) || BALANCE.raidFirst,
@@ -779,13 +979,19 @@ export class Colony {
     if (Array.isArray(data.units)) {
       c.units = data.units
         .filter(u => u && UNIT_TYPES[u.role])
-        .map(u => ({
-          uid: u.uid | 0, role: u.role, x: Number(u.x) || 0, z: Number(u.z) || 0,
-          tx: null, tz: null, state: 'idle', wait: 0,
-          building: typeof u.building === 'number' ? u.building : null,
-          node: typeof u.node === 'number' ? u.node : null,
-          carry: u.carry | 0,
-        }));
+        .map(u => {
+          const task = (u.task && typeof u.task.uid === 'number' && GATHER_BY_RESOURCE[u.task.resource])
+            ? { kind: u.task.kind === 'building' ? 'building' : 'node', uid: u.task.uid, resource: u.task.resource }
+            : null;
+          return {
+            uid: u.uid | 0, role: u.role, x: Number(u.x) || 0, z: Number(u.z) || 0,
+            tx: null, tz: null, state: 'idle', wait: 0,
+            building: typeof u.building === 'number' ? u.building : null,
+            node: typeof u.node === 'number' ? u.node : null,
+            carry: u.carry | 0,
+            manual: !!u.manual && !!task, task,
+          };
+        });
     }
     const maxUid = Math.max(
       c.uidSeq,
