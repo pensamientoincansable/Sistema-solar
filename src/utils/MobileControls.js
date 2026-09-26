@@ -56,6 +56,7 @@ export class MobileControls {
     this.onWeaponNext = null;
     this.onAction = null;
     this.onStickUsed = null; // (side) => {} - para el tutorial
+    this._actionContext = 'none'; // último contexto mostrado en .mob-action
 
     if (!this.container || !this.zone) {
       console.warn('[MobileControls] Falta el DOM de controles táctiles');
@@ -147,7 +148,12 @@ export class MobileControls {
       case 'up': t.up = pressed; break;
       case 'down': t.down = pressed; break;
       case 'action':
+        // El canal de acción siempre refleja el estado del botón (evita que
+        // quede "pegado" si se suelta con otro contexto). En contexto de
+        // aterrizaje, mantener el botón grande equivale a mantener G/🌍:
+        // es el control intuitivo para entrar en la colonia desde el móvil.
         t.action = pressed;
+        if (this._actionContext === 'land') t.civilize = pressed;
         if (pressed) { this.input.requestAction(); if (this.onAction) this.onAction(); }
         break;
       case 'weapon':
@@ -281,10 +287,16 @@ export class MobileControls {
     const key = ctx ? ctx.type : 'none';
     if (btn._ctx === key) return;
     btn._ctx = key;
+    this._actionContext = key;
+    // "land" también aquí: cerca de un planeta desbloqueado el botón grande
+    // contextual pasa a ser "mantén para aterrizar" (sin esto, en el móvil
+    // solo mostraba ACCIÓN genérica y mantenerlo no hacía nada).
     const map = {
       shop: ['shop', 'TIENDA'],
       repair: ['repair', 'REPARAR'],
       deposit: ['deposit', 'DEPOSITAR'],
+      land: ['civilize', 'ATERRIZAR'],
+      'land-locked': ['civilize', 'BLOQUEADO'],
       none: ['hand', 'ACCIÓN'],
     };
     const [icon, label] = map[key] || map.none;
@@ -292,7 +304,7 @@ export class MobileControls {
     const labelEl = btn.querySelector('.mob-label');
     if (iconEl) iconEl.innerHTML = ICONS[icon];
     if (labelEl) labelEl.textContent = label;
-    btn.classList.toggle('dim', key === 'none');
+    btn.classList.toggle('dim', key === 'none' || key === 'land-locked');
     btn.dataset.context = key;
   }
 

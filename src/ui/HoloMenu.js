@@ -67,11 +67,14 @@ export class HoloMenu {
         const result = this.game.civilization.build(id, this.game.scene);
         const planet = PLANETS_CONFIG.find(p => p.id === id);
         const name = planet ? planet.name : id;
+        const holdHint = this.game.touch
+          ? 'Mantén el botón 🌍 (o el botón grande de acción) cerca del planeta para entrar.'
+          : 'Mantén G cerca del planeta para entrar.';
         if (result.can) {
-          this.game.hud?.notify(`✅ Acceso a la superficie de ${name} desbloqueado. Mantén G cerca del planeta para entrar.`, 'success');
+          this.game.hud?.notify(`✅ Acceso a la superficie de ${name} desbloqueado. ${holdHint}`, 'success');
           this.updateMaterials();
         } else if (result.unlocked) {
-          this.game.hud?.notify(`✅ ${name} ya tiene el acceso desbloqueado. Mantén G cerca del planeta para entrar.`, 'info');
+          this.game.hud?.notify(`✅ ${name} ya tiene el acceso desbloqueado. ${holdHint}`, 'info');
         } else if (result.missing) {
           const m = MATERIALS[result.missing] || { name: result.missing, icon: '' };
           this.game.hud?.notify(`Faltan materiales para ${name}: ${m.icon} ${m.name} ${result.have}/${result.need}`, 'danger');
