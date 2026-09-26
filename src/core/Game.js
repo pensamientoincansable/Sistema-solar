@@ -529,9 +529,20 @@ export class Game {
     }
   }
 
-  _beginMission() {
+  /**
+   * Activa los sistemas de combate de una misión en curso: lluvias de
+   * asteroides y OVNIs hostiles. Se usa al iniciar la misión y al CARGAR una
+   * partida: antes de esto, continuar una partida dejaba los asteroides
+   * desactivados para siempre (0 oleadas en toda la sesión) porque
+   * `_beginMission` solo se ejecuta en partidas nuevas.
+   */
+  _activateMission() {
     if (this.asteroids) this.asteroids.setEnabled(true);
     if (this.enemySystem) this.enemySystem.options.peaceful = false;
+  }
+
+  _beginMission() {
+    this._activateMission();
     if (this._missionBegun) {
       this.hud?.notify('🎓 Tutorial completado. ¡Sigue con la misión!', 'success');
       return;
@@ -926,8 +937,10 @@ export class Game {
     const land = this._context && (this._context.type === 'land' || this._context.type === 'land-locked') ? this._context : null;
     if (land) return land.type === 'land-locked'
       ? `🔒 ${land.text}`
-      : `🌍 ${land.text.replace(/^Aterrizar y civilizar /, 'Mantén G para civilizar ')}`;
-    return 'Recoge basura 🗑 y agua 💧 · mantén G cerca de un planeta para civilizarlo';
+      : `🌍 ${land.text.replace(/^Aterrizar y civilizar /, this.touch ? 'Mantén el botón 🌍 para civilizar ' : 'Mantén G para civilizar ')}`;
+    return this.touch
+      ? 'Recoge basura 🗑 y agua 💧 · mantén 🌍 cerca de un planeta para civilizarlo'
+      : 'Recoge basura 🗑 y agua 💧 · mantén G cerca de un planeta para civilizarlo';
   }
 
   _updateIdleCamera(delta) {
@@ -1131,6 +1144,11 @@ export class Game {
       this.hud?.notify(`🔒 ${planet.config.name}: reúne los materiales y desbloquea el acceso desde Menú → Civilizaciones`, 'info');
       return false;
     }
+    // Recupera un estado colgado de una entrada anterior fallida (civ.active
+    // sin isCivMode): sin esto, cada intento nuevo fallaría con "ya activo".
+    if (this.civ.active && !this.isCivMode) {
+      try { this.civ.exit(); } catch (e) { /* noop */ }
+    }
     const w = this.walle;
     try {
       // Normal de aterrizaje en el espacio LOCAL del planeta
@@ -1141,7 +1159,14 @@ export class Game {
       this.civ.options.landingNormal = _dirW;
 
       const ok = this.civ.enter(planet);
-      if (!ok) return false;
+      if (!ok) {
+        // Antes este fallo era silencioso: el jugador mantenía G/🌍 un segundo
+        // y medio y no pasaba absolutamente nada (parecía que "no carga la
+        // barra de acción"). Ahora se avisa y se puede reintentar.
+        this.hud?.alert(`⚠️ No se pudo abrir la colonia de ${planet.config.name}. Inténtalo de nuevo.`, 'danger', 5000);
+        this._vibrate?.([60, 40, 60]);
+        return false;
+      }
 
       // WALL·E se queda aparcado en la colonia
       this.scene.remove(w.group);
@@ -1412,6 +1437,10 @@ export class Game {
       this.playTime = Number(state.playTime) || 0;
       this._won = !!(state.flags && state.flags.won);
       this._missionBegun = !!(state.flags && state.flags.missionBegun);
+      // Continuar la partida no repite el tutorial, pero la misión sigue en
+      // curso: las lluvias de asteroides y los OVNIs deben estar activos.
+      // (Sin esto, una partida cargada jugaba toda la sesión sin asteroides.)
+      if (!this.tutorial || !this.tutorial.active) this._activateMission();
       if (this.trashSystem) this.trashSystem.reset();
       if (this.water) this.water.reset();
       if (this.enemySystem) this.enemySystem.reset();
@@ -1422,7 +1451,7 @@ export class Game {
       if (!this.isPlaying) this.startGame();
       this.hud?.alert(`💾 Partida cargada${meta && meta.label ? ` · ${meta.label}` : ''}`, 'success', 3500);
       const colonies = this.civ ? this.civ.colonies.size : 0;
-      if (colonies) this.hud?.notify(`🌍 ${colonies} colonia${colonies === 1 ? '' : 's'} restaurada${colonies === 1 ? '' : 's'}: mantén G cerca de un planeta para visitarla${colonies === 1 ? '' : 's'}`, 'info');
+      if (colonies) this.hud?.notify(`🌍 ${colonies} colonia${colonies === 1 ? '' : 's'} restaurada${colonies === 1 ? '' : 's'}: ${this.touch ? 'mantén el botón 🌍' : 'mantén G'} cerca de un planeta para visitarla${colonies === 1 ? '' : 's'}`, 'info');
       return { ok: true };
     } catch (e) {
       console.error('[Game] _applyState error:', e);

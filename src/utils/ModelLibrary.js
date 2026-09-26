@@ -30,15 +30,23 @@ export function loadModel(key) {
   const path = MODELS[key];
   const p = new Promise((resolve) => {
     if (!path) { resolve(null); return; }
-    loader.load(
-      assetUrl(path),
-      (gltf) => resolve(gltf),
-      undefined,
-      (err) => {
-        console.warn(`[ModelLibrary] No se pudo cargar ${path}; se usará el modelo de respaldo`, err);
-        resolve(null);
-      }
-    );
+    try {
+      loader.load(
+        assetUrl(path),
+        (gltf) => resolve(gltf),
+        undefined,
+        (err) => {
+          console.warn(`[ModelLibrary] No se pudo cargar ${path}; se usará el modelo de respaldo`, err);
+          resolve(null);
+        }
+      );
+    } catch (err) {
+      // Lanzamientos síncronos (p. ej. URL relativa en entornos sin
+      // navegador) también deben caer en el modelo de respaldo, nunca en una
+      // promesa rechazada sin gestionar.
+      console.warn(`[ModelLibrary] No se pudo iniciar la carga de ${path}; se usará el modelo de respaldo`, err);
+      resolve(null);
+    }
   });
   cache.set(key, p);
   return p;
